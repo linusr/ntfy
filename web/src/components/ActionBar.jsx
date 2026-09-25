@@ -1,4 +1,4 @@
-import { AppBar, Toolbar, IconButton, Typography, Box, MenuItem, Button, Divider, ListItemIcon, useTheme } from "@mui/material";
+import { AppBar, Toolbar, IconButton, Typography, Box, MenuItem, Button, Divider, ListItemIcon } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import * as React from "react";
 import { useState } from "react";
@@ -13,7 +13,7 @@ import Logout from "@mui/icons-material/Logout";
 import Person from "@mui/icons-material/Person";
 import Settings from "@mui/icons-material/Settings";
 import session from "../app/Session";
-import logo from "../img/ntfy.svg";
+import logo from "../img/alai.svg";
 import subscriptionManager from "../app/SubscriptionManager";
 import routes from "./routes";
 import db from "../app/db";
@@ -26,12 +26,11 @@ import { SubscriptionPopup } from "./SubscriptionPopup";
 import { useIsLaunchedPWA } from "./hooks";
 
 const ActionBar = (props) => {
-  const theme = useTheme();
   const { t } = useTranslation();
   const location = useLocation();
   const isLaunchedPWA = useIsLaunchedPWA();
 
-  let title = "ntfy";
+  let title = "Alai";
   if (props.selected) {
     title = topicDisplayName(props.selected);
   } else if (location.pathname === routes.settings) {
@@ -39,21 +38,6 @@ const ActionBar = (props) => {
   } else if (location.pathname === routes.account) {
     title = t("action_bar_account");
   }
-
-  const getActionBarBackground = () => {
-    if (isLaunchedPWA) {
-      return "#317f6f";
-    }
-
-    switch (theme.palette.mode) {
-      case "dark":
-        return "linear-gradient(150deg, #203631 0%, #2a6e60 100%)";
-
-      case "light":
-      default:
-        return "linear-gradient(150deg, #338574 0%, #56bda8 100%)";
-    }
-  };
 
   return (
     <AppBar
@@ -64,12 +48,7 @@ const ActionBar = (props) => {
         ml: { sm: `${Navigation.width}px` },
       }}
     >
-      <Toolbar
-        sx={{
-          pr: "24px",
-          background: getActionBarBackground(),
-        }}
-      >
+      <Toolbar sx={{ pr: "16px" }}>
         <IconButton
           color="inherit"
           edge="start"
@@ -85,8 +64,9 @@ const ActionBar = (props) => {
           alt={t("action_bar_logo_alt")}
           sx={{
             display: { xs: "none", sm: "block" },
-            marginRight: "10px",
-            height: "28px",
+            marginRight: "12px",
+            height: "30px",
+            borderRadius: "8px",
           }}
         />
         <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>

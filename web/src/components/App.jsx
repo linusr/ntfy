@@ -103,7 +103,7 @@ const App = () => {
 };
 
 const updateTitle = (newNotificationsCount) => {
-  document.title = newNotificationsCount > 0 ? `(${newNotificationsCount}) ntfy` : "ntfy";
+  document.title = newNotificationsCount > 0 ? `(${newNotificationsCount}) Alai` : "Alai";
   window.navigator.setAppBadge?.(newNotificationsCount);
   updateFavicon(newNotificationsCount);
 };
@@ -184,7 +184,7 @@ const Main = (props) => (
       width: { sm: `calc(100% - ${Navigation.width}px)` },
       height: "100dvh",
       overflow: "auto",
-      backgroundColor: ({ palette }) => (palette.mode === "light" ? palette.grey[100] : palette.grey[900]),
+      backgroundColor: "background.default",
     }}
   >
     {props.children}
@@ -196,7 +196,7 @@ const Loader = () => (
     open
     sx={{
       zIndex: 100000,
-      backgroundColor: ({ palette }) => (palette.mode === "light" ? palette.grey[100] : palette.grey[900]),
+      backgroundColor: "background.default",
     }}
   >
     <CircularProgress color="success" disableShrink />

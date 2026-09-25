@@ -1,6 +1,6 @@
 import * as React from "react";
 import { useState } from "react";
-import { Paper, IconButton, TextField, Portal, Snackbar } from "@mui/material";
+import { Paper, IconButton, TextField, Portal, Snackbar, alpha } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import { useTranslation } from "react-i18next";
@@ -88,15 +88,21 @@ const MessageBar = (props) => {
 
   return (
     <Paper
-      elevation={3}
+      elevation={0}
       sx={{
         display: "flex",
+        alignItems: "center",
+        gap: 1,
         position: "fixed",
         bottom: 0,
         right: 0,
-        padding: 2,
+        px: 2,
+        py: 1.5,
         width: { xs: "100%", sm: `calc(100% - ${Navigation.width}px)` },
-        backgroundColor: (theme) => (theme.palette.mode === "light" ? theme.palette.grey[100] : theme.palette.grey[900]),
+        backgroundColor: ({ palette }) => alpha(palette.background.paper, 0.85),
+        backdropFilter: "saturate(180%) blur(16px)",
+        borderTop: 1,
+        borderColor: "divider",
       }}
     >
       <IconButton color="inherit" size="large" edge="start" onClick={props.onOpenDialogClick} aria-label={t("message_bar_show_dialog")}>
@@ -104,13 +110,14 @@ const MessageBar = (props) => {
       </IconButton>
       <TextField
         autoFocus
-        margin="dense"
+        size="small"
         placeholder={t("message_bar_type_message")}
         aria-label={t("message_bar_type_message")}
         role="textbox"
         type="text"
         fullWidth
-        variant="standard"
+        variant="outlined"
+        sx={{ "& .MuiOutlinedInput-root": { borderRadius: "999px", bgcolor: "background.default", pl: 1 } }}
         value={props.message}
         onChange={(ev) => props.onMessageChange(ev.target.value)}
         onKeyPress={(ev) => {
@@ -121,7 +128,7 @@ const MessageBar = (props) => {
         }}
         onPaste={handlePaste}
       />
-      <IconButton color="inherit" size="large" edge="end" onClick={handleSendClick} aria-label={t("message_bar_publish")}>
+      <IconButton color="primary" size="large" edge="end" onClick={handleSendClick} aria-label={t("message_bar_publish")}>
         <SendIcon />
       </IconButton>
       <Portal>
