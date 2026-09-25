@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"golang.org/x/sync/errgroup"
 	"heckel.io/ntfy/v2/action"
+	"heckel.io/ntfy/v2/apns"
 	"heckel.io/ntfy/v2/attachment"
 	"heckel.io/ntfy/v2/ban"
 	"heckel.io/ntfy/v2/db"
@@ -68,6 +69,8 @@ type Server struct {
 	userManager       *user.Manager                       // Might be nil!
 	messageCache      *message.Cache                      // Database that stores the messages
 	webPush           *webpush.Store                      // Database that stores web push subscriptions
+	apnsStore         *apns.Store                         // Database that stores APNs device registrations
+	apnsSender        apnsSender                          // Sends notifications to APNs, nil if APNs is not configured
 	attachment        *attachment.Store                   // Attachment store (file system or S3)
 	stripe            stripeAPI                           // Stripe API, can be replaced with a mock
 	priceCache        *util.LookupCache[map[string]int64] // Stripe price ID -> price as cents (USD implied!)
@@ -110,6 +113,7 @@ var (
 	apiConfigPath                                        = "/v1/config"
 	apiStatsPath                                         = "/v1/stats"
 	apiWebPushPath                                       = "/v1/webpush"
+	apiAPNSPath                                          = "/v1/apns"
 	apiTiersPath                                         = "/v1/tiers"
 	apiUsersPath                                         = "/v1/users"
 	apiUsersAccessPath                                   = "/v1/users/access"
@@ -227,6 +231,10 @@ func New(conf *Config) (*Server, error) {
 			return nil, err
 		}
 	}
+	apnsStore, apnsSender, err := createAPNS(conf, pool)
+	if err != nil {
+		return nil, err
+	}
 	topicIDs, err := messageCache.Topics()
 	if err != nil {
 		return nil, err
@@ -308,6 +316,8 @@ func New(conf *Config) (*Server, error) {
 		db:              pool,
 		messageCache:    messageCache,
 		webPush:         wp,
+		apnsStore:       apnsStore,
+		apnsSender:      apnsSender,
 		attachment:      attachmentStore,
 		firebaseClient:  firebaseClient,
 		twilio:          twilioClient,
@@ -481,6 +491,9 @@ func (s *Server) closeDatabases() {
 	if s.messageCache != nil {
 		s.messageCache.Close()
 	}
+	if s.apnsStore != nil {
+		s.apnsStore.Close()
+	}
 	if s.webPush != nil {
 		s.webPush.Close()
 	}
@@ -651,6 +664,10 @@ func (s *Server) handleInternal(w http.ResponseWriter, r *http.Request, v *visit
 		return s.ensureWebPushEnabled(s.limitRequests(s.handleWebPushUpdate))(w, r, v)
 	} else if r.Method == http.MethodDelete && apiWebPushPath == r.URL.Path {
 		return s.ensureWebPushEnabled(s.limitRequests(s.handleWebPushDelete))(w, r, v)
+	} else if r.Method == http.MethodPost && apiAPNSPath == r.URL.Path {
+		return s.ensureAPNSEnabled(s.limitRequests(s.handleAPNSDeviceUpdate))(w, r, v)
+	} else if r.Method == http.MethodDelete && apiAPNSPath == r.URL.Path {
+		return s.ensureAPNSEnabled(s.limitRequests(s.handleAPNSDeviceDelete))(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == apiStatsPath {
 		return s.handleStats(w, r, v)
 	} else if r.Method == http.MethodGet && r.URL.Path == apiTiersPath {
@@ -852,6 +869,9 @@ func (s *Server) dispatch(v *visitor, t *topic, m *model.Message, opts dispatchO
 	if s.config.WebPushPublicKey != "" && opts.webPush {
 		go s.publishToWebPushEndpoints(v, m)
 	}
+	if s.apnsSender != nil && opts.apns {
+		go s.publishToAPNSDevices(v, m)
+	}
 	return nil
 }
 
@@ -939,6 +959,7 @@ func (s *Server) handlePublishInternal(r *http.Request, v *visitor) (*model.Mess
 			call:     call,
 			upstream: !unifiedpush, // UP messages are not sent to upstream
 			webPush:  true,
+			apns:     true,
 		})
 		if err != nil {
 			return nil, err
@@ -1042,7 +1063,7 @@ func (s *Server) handleActionMessage(w http.ResponseWriter, r *http.Request, v *
 	m.User = v.MaybeUserID()
 	m.Expires = time.Unix(m.Time, 0).Add(v.Limits().MessageExpiryDuration).Unix()
 	// Publish to subscribers, Firebase (for Android clients), and web push endpoints
-	if err := s.dispatch(v, t, m, dispatchOpts{firebase: true, webPush: true}); err != nil {
+	if err := s.dispatch(v, t, m, dispatchOpts{firebase: true, webPush: true, apns: true}); err != nil {
 		return err
 	}
 	if event == model.MessageDeleteEvent {
@@ -2032,6 +2053,7 @@ func (s *Server) sendDelayedMessage(v *visitor, m *model.Message) error {
 		firebase: true,
 		upstream: true,
 		webPush:  true,
+		apns:     true,
 		async:    true,
 	})
 	if err != nil {

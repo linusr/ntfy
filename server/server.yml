@@ -244,6 +244,30 @@
 # web-push-expiry-warning-duration: "55d"
 # web-push-expiry-duration: "60d"
 
+# Apple Push Notification service (APNs), for delivering directly to your own build of an iOS app
+#
+# Requires an Apple Developer Program membership. The key, key ID and team ID come from the Apple Developer portal
+# (Certificates, Identifiers & Profiles -> Keys), and the bundle ID must belong to the same team. base-url must be set.
+#
+# - apns-key-file is the APNs auth key (.p8), e.g. /etc/ntfy/AuthKey_ABC123DEFG.p8
+# - apns-key-id is the 10-character key ID, e.g. ABC123DEFG
+# - apns-team-id is the 10-character team ID, e.g. DEF123GHIJ
+# - apns-bundle-id is the bundle ID of the iOS app, e.g. io.example.ntfy
+# - apns-file is a database file to keep track of registered devices, e.g. /var/cache/ntfy/apns.db
+#   Not required if "database-url" is set (devices are stored in PostgreSQL instead).
+# - apns-startup-queries is an optional list of queries to run on startup
+# - apns-payload is "full" to send message content through APNs, or "minimal" to send only message IDs (default is full)
+# - apns-expiry-duration defines the duration after which devices that have not re-registered are removed (default is 60d)
+#
+# apns-key-file:
+# apns-key-id:
+# apns-team-id:
+# apns-bundle-id:
+# apns-file:
+# apns-startup-queries:
+# apns-payload: "full"
+# apns-expiry-duration: "60d"
+
 # If enabled, ntfy can perform voice calls via Twilio via the "X-Call" header.
 #
 # - twilio-account is the Twilio account SID, e.g. AC12345beefbeef67890beefbeef122586

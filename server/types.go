@@ -37,6 +37,7 @@ type dispatchOpts struct {
 	call     string // Call this phone number (if Twilio is configured)
 	upstream bool   // Forward a poll request to the upstream server (if configured)
 	webPush  bool   // Publish to web push endpoints (if configured)
+	apns     bool   // Publish to registered APNs devices (if configured)
 	async    bool   // Deliver to local subscribers in a goroutine, logging errors instead of returning them
 }
 
@@ -435,6 +436,12 @@ type apiWebPushUpdateSubscriptionRequest struct {
 	Auth     string   `json:"auth"`
 	P256dh   string   `json:"p256dh"`
 	Topics   []string `json:"topics"`
+}
+
+type apiAPNSDeviceRequest struct {
+	Token       string   `json:"token"`
+	Environment string   `json:"environment"` // "production" (default) or "sandbox"
+	Topics      []string `json:"topics"`
 }
 
 // List of possible Web Push events (see sw.js)

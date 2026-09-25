@@ -150,6 +150,8 @@ var (
 	errHTTPBadRequestResetLinkInvalid                = &errHTTP{40054, http.StatusBadRequest, "invalid request: password reset link invalid or expired", "", nil}
 	errHTTPBadRequestTemplateTooLarge                = &errHTTP{40056, http.StatusBadRequest, "invalid request: template too large", "https://ntfy.sh/docs/publish/#message-templating", nil}
 	errHTTPBadRequestTitleTooLarge                   = &errHTTP{40057, http.StatusBadRequest, "invalid request: title is too large", "https://ntfy.sh/docs/publish/#limitations", nil}
+	errHTTPBadRequestAPNSDeviceInvalid               = &errHTTP{40059, http.StatusBadRequest, "invalid request: APNs device registration malformed", "", nil}
+	errHTTPBadRequestAPNSTopicCountTooHigh           = &errHTTP{40060, http.StatusBadRequest, "invalid request: too many APNs topic subscriptions", "", nil}
 	errHTTPBadRequestTagsTooLarge                    = &errHTTP{40058, http.StatusBadRequest, "invalid request: tags are too large", "https://ntfy.sh/docs/publish/#limitations", nil}
 	errHTTPNotFound                                  = &errHTTP{40401, http.StatusNotFound, "page not found", "", nil}
 	errHTTPUnauthorized                              = &errHTTP{40101, http.StatusUnauthorized, "unauthorized", "https://ntfy.sh/docs/publish/#authentication", nil}

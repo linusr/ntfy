@@ -41,6 +41,14 @@ var flagsServe = append(
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "key-file", Aliases: []string{"key_file", "K"}, EnvVars: []string{"NTFY_KEY_FILE"}, Usage: "private key file, if listen-https is set"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "cert-file", Aliases: []string{"cert_file", "E"}, EnvVars: []string{"NTFY_CERT_FILE"}, Usage: "certificate file, if listen-https is set"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "firebase-key-file", Aliases: []string{"firebase_key_file", "F"}, EnvVars: []string{"NTFY_FIREBASE_KEY_FILE"}, Usage: "Firebase credentials file; if set additionally publish to FCM topic"}),
+	altsrc.NewStringFlag(&cli.StringFlag{Name: "apns-key-file", Aliases: []string{"apns_key_file"}, EnvVars: []string{"NTFY_APNS_KEY_FILE"}, Usage: "APNs auth key (.p8) file; if set, publish to registered iOS devices via APNs"}),
+	altsrc.NewStringFlag(&cli.StringFlag{Name: "apns-key-id", Aliases: []string{"apns_key_id"}, EnvVars: []string{"NTFY_APNS_KEY_ID"}, Usage: "key ID of the APNs auth key"}),
+	altsrc.NewStringFlag(&cli.StringFlag{Name: "apns-team-id", Aliases: []string{"apns_team_id"}, EnvVars: []string{"NTFY_APNS_TEAM_ID"}, Usage: "Apple Developer team ID that owns the APNs auth key"}),
+	altsrc.NewStringFlag(&cli.StringFlag{Name: "apns-bundle-id", Aliases: []string{"apns_bundle_id"}, EnvVars: []string{"NTFY_APNS_BUNDLE_ID"}, Usage: "bundle ID of the iOS app receiving notifications"}),
+	altsrc.NewStringFlag(&cli.StringFlag{Name: "apns-file", Aliases: []string{"apns_file"}, EnvVars: []string{"NTFY_APNS_FILE"}, Usage: "file used to store APNs device registrations"}),
+	altsrc.NewStringFlag(&cli.StringFlag{Name: "apns-startup-queries", Aliases: []string{"apns_startup_queries"}, EnvVars: []string{"NTFY_APNS_STARTUP_QUERIES"}, Usage: "queries run when the APNs database is initialized"}),
+	altsrc.NewStringFlag(&cli.StringFlag{Name: "apns-payload", Aliases: []string{"apns_payload"}, EnvVars: []string{"NTFY_APNS_PAYLOAD"}, Value: server.APNSPayloadFull, Usage: "message content sent through APNs: 'full', or 'minimal' to send only message IDs"}),
+	altsrc.NewStringFlag(&cli.StringFlag{Name: "apns-expiry-duration", Aliases: []string{"apns_expiry_duration"}, EnvVars: []string{"NTFY_APNS_EXPIRY_DURATION"}, Value: util.FormatDuration(server.DefaultAPNSExpiryDuration), Usage: "automatically remove devices that have not re-registered within this time"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "database-url", Aliases: []string{"database_url"}, EnvVars: []string{"NTFY_DATABASE_URL"}, Usage: "PostgreSQL connection string for database-backed stores (e.g. postgres://user:pass@host:5432/ntfy)"}),
 	altsrc.NewStringSliceFlag(&cli.StringSliceFlag{Name: "database-replica-urls", Aliases: []string{"database_replica_urls"}, EnvVars: []string{"NTFY_DATABASE_REPLICA_URLS"}, Usage: "PostgreSQL read replica connection strings for offloading read queries"}),
 	altsrc.NewStringFlag(&cli.StringFlag{Name: "cache-file", Aliases: []string{"cache_file", "C"}, EnvVars: []string{"NTFY_CACHE_FILE"}, Usage: "cache file used for message caching"}),
@@ -155,6 +163,14 @@ func execServe(c *cli.Context) error {
 	keyFile := c.String("key-file")
 	certFile := c.String("cert-file")
 	firebaseKeyFile := c.String("firebase-key-file")
+	apnsKeyFile := c.String("apns-key-file")
+	apnsKeyID := c.String("apns-key-id")
+	apnsTeamID := c.String("apns-team-id")
+	apnsBundleID := c.String("apns-bundle-id")
+	apnsFile := c.String("apns-file")
+	apnsStartupQueries := c.String("apns-startup-queries")
+	apnsPayload := c.String("apns-payload")
+	apnsExpiryDurationStr := c.String("apns-expiry-duration")
 	databaseURL := c.String("database-url")
 	databaseReplicaURLs := c.StringSlice("database-replica-urls")
 	webPushPrivateKey := c.String("web-push-private-key")
@@ -272,6 +288,10 @@ func execServe(c *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("invalid visitor topic creation limit replenish: %s", visitorTopicCreationLimitReplenishStr)
 	}
+	apnsExpiryDuration, err := util.ParseDuration(apnsExpiryDurationStr)
+	if err != nil {
+		return fmt.Errorf("invalid APNs expiry duration: %s", apnsExpiryDurationStr)
+	}
 	webPushExpiryDuration, err := util.ParseDuration(webPushExpiryDurationStr)
 	if err != nil {
 		return fmt.Errorf("invalid web push expiry duration: %s", webPushExpiryDurationStr)
@@ -318,14 +338,22 @@ func execServe(c *cli.Context) error {
 	// Check values
 	if databaseURL != "" && !strings.HasPrefix(databaseURL, "postgres://") && !strings.HasPrefix(databaseURL, "postgresql://") {
 		return errors.New("if database-url is set, it must start with postgres:// or postgresql://")
-	} else if databaseURL != "" && (authFile != "" || cacheFile != "" || webPushFile != "") {
-		return errors.New("if database-url is set, auth-file, cache-file, and web-push-file must not be set")
+	} else if databaseURL != "" && (authFile != "" || cacheFile != "" || webPushFile != "" || apnsFile != "") {
+		return errors.New("if database-url is set, auth-file, cache-file, web-push-file, and apns-file must not be set")
 	} else if len(databaseReplicaURLs) > 0 && databaseURL == "" {
 		return errors.New("database-replica-urls can only be used if database-url is also set")
 	} else if firebaseKeyFile != "" && !util.FileExists(firebaseKeyFile) {
 		return errors.New("if set, FCM key file must exist")
 	} else if firebaseKeyFile != "" && !server.FirebaseAvailable {
 		return errors.New("cannot set firebase-key-file, support for Firebase is not available (nofirebase)")
+	} else if apnsKeyFile != "" && !server.APNSAvailable {
+		return errors.New("cannot set apns-key-file, support for APNs is not available (noapns)")
+	} else if apnsKeyFile != "" && !util.FileExists(apnsKeyFile) {
+		return errors.New("if set, APNs key file must exist")
+	} else if apnsKeyFile != "" && (apnsKeyID == "" || apnsTeamID == "" || apnsBundleID == "" || (apnsFile == "" && databaseURL == "") || baseURL == "") {
+		return errors.New("if APNs is enabled, apns-key-id, apns-team-id, apns-bundle-id, apns-file (or database-url), and base-url must be set")
+	} else if apnsPayload != server.APNSPayloadFull && apnsPayload != server.APNSPayloadMinimal {
+		return errors.New("apns-payload must be 'full' or 'minimal'")
 	} else if webPushPublicKey != "" && (webPushPrivateKey == "" || (webPushFile == "" && databaseURL == "") || webPushEmailAddress == "" || baseURL == "") {
 		return errors.New("if web push is enabled, web-push-private-key, web-push-public-key, web-push-file (or database-url), web-push-email-address, and base-url should be set. run 'ntfy webpush keys' to generate keys")
 	} else if keepaliveInterval < 5*time.Second {
@@ -566,6 +594,14 @@ func execServe(c *cli.Context) error {
 	conf.WebPushStartupQueries = webPushStartupQueries
 	conf.WebPushExpiryDuration = webPushExpiryDuration
 	conf.WebPushExpiryWarningDuration = webPushExpiryWarningDuration
+	conf.APNSKeyFile = apnsKeyFile
+	conf.APNSKeyID = apnsKeyID
+	conf.APNSTeamID = apnsTeamID
+	conf.APNSBundleID = apnsBundleID
+	conf.APNSFile = apnsFile
+	conf.APNSStartupQueries = apnsStartupQueries
+	conf.APNSPayload = apnsPayload
+	conf.APNSExpiryDuration = apnsExpiryDuration
 	conf.BuildVersion = c.App.Version
 	conf.BuildDate = maybeFromMetadata(c.App.Metadata, MetadataKeyDate)
 	conf.BuildCommit = maybeFromMetadata(c.App.Metadata, MetadataKeyCommit)
