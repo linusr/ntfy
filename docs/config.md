@@ -1637,6 +1637,81 @@ Note that the self-hosted server literally sends the message `New message` for e
 may be `Some other message`. This is so that if iOS cannot talk to the self-hosted server (in time, or at all), 
 it'll show `New message` as a popup.
 
+## Apple Push Notification service (APNs)
+ntfy can deliver messages directly to your own build of an iOS app through Apple Push Notification service (APNs),
+without Firebase or an upstream server. This requires an [Apple Developer Program](https://developer.apple.com/programs/)
+membership and an app whose bundle ID belongs to your team; the official ntfy iOS app cannot be targeted this way,
+since APNs only accepts pushes signed by the team that owns the app.
+
+- `apns-key-file` is the APNs auth key (`.p8`) downloaded from *Certificates, Identifiers & Profiles → Keys*, e.g. `/etc/ntfy/AuthKey_ABC123DEFG.p8`
+- `apns-key-id` is the 10-character key ID shown next to the key, e.g. `ABC123DEFG`
+- `apns-team-id` is your 10-character team ID, e.g. `DEF123GHIJ`
+- `apns-bundle-id` is the bundle ID of the app receiving notifications, e.g. `io.example.ntfy`
+- `apns-file` is a database file to keep track of registered devices, e.g. `/var/cache/ntfy/apns.db` (not required if `database-url` is set)
+- `apns-startup-queries` is an optional list of queries to run on startup
+- `apns-payload` is `full` (default) to send message content through APNs, or `minimal` to send only message IDs; the app then fetches the content from your server
+- `apns-expiry-duration` defines the duration after which devices that have not re-registered are removed (default is `60d`)
+
+```yaml
+base-url: "https://ntfy.example.com"
+apns-key-file: "/etc/ntfy/AuthKey_ABC123DEFG.p8"
+apns-key-id: "ABC123DEFG"
+apns-team-id: "DEF123GHIJ"
+apns-bundle-id: "io.example.ntfy"
+apns-file: "/var/cache/ntfy/apns.db"
+```
+
+The app registers its device token and topics with the server, and re-registers whenever its subscriptions change or
+it launches, which keeps the registration from expiring:
+
+```
+POST /v1/apns
+{"token": "<hex device token>", "environment": "production", "topics": ["mytopic", "backups"]}
+
+DELETE /v1/apns
+{"token": "<hex device token>"}
+```
+
+`environment` is `sandbox` for development builds installed from Xcode, and `production` (default) for TestFlight and
+App Store builds. Registering a protected topic requires read access, and devices stop receiving a topic's messages
+if the registering user loses read access. Deleting an account removes its devices.
+
+Each message is sent as an alert push with `mutable-content` set, so a Notification Service Extension can modify it
+before display. The payload carries the message under the `ntfy` key, in the same format as the
+[JSON stream](subscribe/api.md#json-message-format):
+
+```json
+{
+  "aps": {
+    "alert": {"title": "nas01", "body": "Backup finished"},
+    "sound": "default",
+    "thread-id": "backups",
+    "mutable-content": 1,
+    "interruption-level": "time-sensitive",
+    "relevance-score": 0.8
+  },
+  "base_url": "https://ntfy.example.com",
+  "ntfy": {"id": "s4PdJozxM8na", "time": 1727200000, "event": "message", "topic": "backups", "title": "nas01", "message": "Backup finished", "priority": 4}
+}
+```
+
+| ntfy priority | Interruption level | Sound | `apns-priority` |
+|---------------|--------------------|-------|-----------------|
+| 1, 2          | `passive`          | none  | 5               |
+| 3 (default)   | `active`           | yes   | 10              |
+| 4, 5          | `time-sensitive`   | yes   | 10              |
+
+Behavior worth knowing when building the app:
+
+- Messages sharing a [sequence ID](publish.md#updating-deleting-notifications) share an `apns-collapse-id`, so an update replaces the earlier notification.
+- Payloads over 4 KB, and all payloads when `apns-payload: minimal` is set, carry a `poll_request` event with `poll_id`
+  instead of the full message. The extension fetches it via `GET /<topic>/json?poll=1&id=<poll_id>`.
+- Deleting or clearing a message sends a background push (`content-available`) carrying the `message_delete` or
+  `message_clear` event. Apple throttles background pushes, so their delivery is best-effort.
+- Tokens rejected by Apple as unregistered or invalid are removed automatically.
+- `time-sensitive` requires the *Time Sensitive Notifications* capability in the app. Priority 5 does not map to
+  `critical`, since critical alerts require a separate entitlement from Apple.
+
 ## Web Push
 [Web Push](https://developer.mozilla.org/en-US/docs/Web/API/Push_API) ([RFC8030](https://datatracker.ietf.org/doc/html/rfc8030))
 allows ntfy to receive push notifications, even when the ntfy web app (or even the browser, depending on the platform) is closed. 
@@ -2416,6 +2491,14 @@ variable before running the `ntfy` command (e.g. `export NTFY_LISTEN_HTTP=:80`).
 | `web-push-startup-queries`                 | `NTFY_WEB_PUSH_STARTUP_QUERIES`                 | *string*                                            | -                 | Web Push: SQL queries to run against subscription database at startup                                                                                                                                                                   |
 | `web-push-expiry-duration`                 | `NTFY_WEB_PUSH_EXPIRY_DURATION`                 | *duration*                                          | 60d               | Web Push: Duration after which a subscription is considered stale and will be deleted. This is to prevent stale subscriptions.                                                                                                          |
 | `web-push-expiry-warning-duration`         | `NTFY_WEB_PUSH_EXPIRY_WARNING_DURATION`         | *duration*                                          | 55d               | Web Push: Duration after which a warning is sent to subscribers that their subscription will expire soon. This is to prevent stale subscriptions.                                                                                       |
+| `apns-key-file`                            | `NTFY_APNS_KEY_FILE`                            | *filename*                                          | -                 | APNs: Auth key (.p8) used to send notifications directly to an iOS app. See [APNs](#apple-push-notification-service-apns).                                                                                                              |
+| `apns-key-id`                              | `NTFY_APNS_KEY_ID`                              | *string*                                            | -                 | APNs: Key ID of the auth key.                                                                                                                                                                                                           |
+| `apns-team-id`                             | `NTFY_APNS_TEAM_ID`                             | *string*                                            | -                 | APNs: Apple Developer team ID that owns the auth key.                                                                                                                                                                                   |
+| `apns-bundle-id`                           | `NTFY_APNS_BUNDLE_ID`                           | *string*                                            | -                 | APNs: Bundle ID of the iOS app receiving notifications.                                                                                                                                                                                 |
+| `apns-file`                                | `NTFY_APNS_FILE`                                | *string*                                            | -                 | APNs: Database file that stores device registrations. Not required if `database-url` is set.                                                                                                                                            |
+| `apns-startup-queries`                     | `NTFY_APNS_STARTUP_QUERIES`                     | *string*                                            | -                 | APNs: SQL queries to run during database startup.                                                                                                                                                                                       |
+| `apns-payload`                             | `NTFY_APNS_PAYLOAD`                             | `full` or `minimal`                                 | full              | APNs: `minimal` sends only message IDs through APNs; the app fetches content from the server.                                                                                                                                           |
+| `apns-expiry-duration`                     | `NTFY_APNS_EXPIRY_DURATION`                     | *duration*                                          | 60d               | APNs: Duration after which devices that have not re-registered are removed.                                                                                                                                                             |
 | `log-format`                               | `NTFY_LOG_FORMAT`                               | *string*                                            | `text`            | Defines the output format, can be text or json                                                                                                                                                                                          |
 | `log-file`                                 | `NTFY_LOG_FILE`                                 | *string*                                            | -                 | Defines the filename to write logs to. If this is not set, ntfy logs to stderr                                                                                                                                                          |
 | `log-level`                                | `NTFY_LOG_LEVEL`                                | *string*                                            | `info`            | Defines the default log level, can be one of trace, debug, info, warn or error                                                                                                                                                          |

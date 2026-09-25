@@ -30,6 +30,12 @@ var (
 	FirebasePublishedFailure = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "ntfy_firebase_published_failure",
 	})
+	APNSPublishedSuccess = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "ntfy_apns_published_success",
+	})
+	APNSPublishedFailure = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "ntfy_apns_published_failure",
+	})
 	EmailsPublishedSuccess = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "ntfy_emails_sent_success",
 	})
@@ -88,6 +94,8 @@ func init() {
 		MessagePublishDurationMillis,
 		FirebasePublishedSuccess,
 		FirebasePublishedFailure,
+		APNSPublishedSuccess,
+		APNSPublishedFailure,
 		EmailsPublishedSuccess,
 		EmailsPublishedFailure,
 		EmailsReceivedSuccess,

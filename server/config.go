@@ -43,6 +43,14 @@ const (
 	DefaultWebPushExpiryDuration        = 60 * 24 * time.Hour
 )
 
+// Defines default APNs settings
+const (
+	DefaultAPNSExpiryDuration = 60 * 24 * time.Hour
+
+	APNSPayloadFull    = "full"    // Title, body and message fields travel through APNs
+	APNSPayloadMinimal = "minimal" // Only message IDs travel through APNs; the app fetches content from the server
+)
+
 // Defines default abuse ban-feed settings (see BanFile, BanWindow, BanThreshold, BanWeights)
 const (
 	DefaultBanWindow    = 10 * time.Minute
@@ -226,6 +234,14 @@ type Config struct {
 	WebPushStartupQueries                string
 	WebPushExpiryDuration                time.Duration
 	WebPushExpiryWarningDuration         time.Duration
+	APNSKeyFile                          string
+	APNSKeyID                            string
+	APNSTeamID                           string
+	APNSBundleID                         string
+	APNSFile                             string
+	APNSStartupQueries                   string
+	APNSPayload                          string // "full" sends message content through APNs, "minimal" sends only IDs and lets the app fetch
+	APNSExpiryDuration                   time.Duration
 	BanFile                              string        // Abuse ban-feed: file that fail2ban tails; empty string disables the feature
 	BanWindow                            time.Duration // Abuse ban-feed: rolling window over which weighted strikes are counted
 	BanThreshold                         int           // Abuse ban-feed: weighted strikes per window before a prefix is banned
@@ -334,6 +350,8 @@ func NewConfig() *Config {
 		WebPushEmailAddress:                  "",
 		WebPushExpiryDuration:                DefaultWebPushExpiryDuration,
 		WebPushExpiryWarningDuration:         DefaultWebPushExpiryWarningDuration,
+		APNSPayload:                          APNSPayloadFull,
+		APNSExpiryDuration:                   DefaultAPNSExpiryDuration,
 		BanFile:                              "",
 		BanWindow:                            DefaultBanWindow,
 		BanThreshold:                         DefaultBanThreshold,
