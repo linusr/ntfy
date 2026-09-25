@@ -1,7 +1,6 @@
 import {
   Alert,
   AlertTitle,
-  Badge,
   Box,
   Button,
   CircularProgress,
@@ -22,7 +21,6 @@ import {
 } from "@mui/material";
 import * as React from "react";
 import { useContext, useState } from "react";
-import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutlineOutlined";
 import Person from "@mui/icons-material/Person";
 import SettingsIcon from "@mui/icons-material/Settings";
 import AddIcon from "@mui/icons-material/Add";
@@ -48,6 +46,7 @@ import AccountContext from "./AccountContext";
 import { PermissionDenyAll, PermissionRead, PermissionReadWrite, PermissionWrite } from "./ReserveIcons";
 import { SubscriptionPopup } from "./SubscriptionPopup";
 import { useNotificationPermissionListener, useVersionChangeListener } from "./hooks";
+import TopicAvatar from "./TopicAvatar";
 
 const navWidth = 280;
 
@@ -300,14 +299,7 @@ const SubscriptionItem = (props) => {
   const iconBadge = subscription.new <= 99 ? subscription.new : "99+";
   const displayName = topicDisplayName(subscription);
   const ariaLabel = subscription.state === ConnectionState.Connecting ? `${displayName} (${t("nav_button_connecting")})` : displayName;
-  const icon =
-    subscription.state === ConnectionState.Connecting ? (
-      <CircularProgress size="24px" />
-    ) : (
-      <Badge badgeContent={iconBadge} invisible={subscription.new === 0} color="primary">
-        <ChatBubbleOutlineIcon />
-      </Badge>
-    );
+  const icon = subscription.state === ConnectionState.Connecting ? <CircularProgress size="22px" /> : <TopicAvatar name={displayName} />;
 
   const handleClick = async () => {
     navigate(routes.forSubscription(subscription));
@@ -347,6 +339,26 @@ const SubscriptionItem = (props) => {
               </Tooltip>
             )}
           </ListItemIcon>
+        )}
+        {subscription.new > 0 && (
+          <Box
+            component="span"
+            sx={{
+              minWidth: 22,
+              height: 20,
+              px: 0.75,
+              mr: 0.5,
+              borderRadius: "10px",
+              fontSize: 12,
+              fontWeight: 700,
+              lineHeight: "20px",
+              textAlign: "center",
+              color: "primary.contrastText",
+              bgcolor: "primary.main",
+            }}
+          >
+            {iconBadge}
+          </Box>
         )}
         {subscription.mutedUntil > 0 && (
           <ListItemIcon edge="end" sx={{ minWidth: "26px" }} aria-label={t("nav_button_muted")}>

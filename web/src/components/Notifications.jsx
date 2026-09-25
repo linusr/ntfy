@@ -15,6 +15,7 @@ import {
   IconButton,
   Box,
   Button,
+  Chip,
 } from "@mui/material";
 import * as React from "react";
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
@@ -33,7 +34,7 @@ import priority1 from "../img/priority-1.svg";
 import priority2 from "../img/priority-2.svg";
 import priority4 from "../img/priority-4.svg";
 import priority5 from "../img/priority-5.svg";
-import logoOutline from "../img/ntfy-outline.svg";
+import logoOutline from "../img/alai-outline.svg";
 import AttachmentIcon from "./AttachmentIcon";
 import { useAutoSubscribe } from "./hooks";
 import { usePrefCache } from "./PrefCache";
@@ -125,7 +126,7 @@ const NotificationList = (props) => {
           marginBottom: props.messageBar ? "100px" : 3, // Hack to avoid hiding notifications behind the message bar
         }}
       >
-        <Stack spacing={3}>
+        <Stack spacing={2}>
           {notifications.slice(0, count).map((notification) => (
             <NotificationItem key={notification.id} notification={notification} onShowSnack={() => setSnackOpen(true)} />
           ))}
@@ -177,6 +178,23 @@ const NotificationBody = ({ notification }) => {
   return autolink(formatted);
 };
 
+/**
+ * "5 min ago" for the last week, falling back to the formatted date (which honors the user's date and
+ * time format preferences) for older messages.
+ */
+const formatRelativeTime = (timestamp, fallback) => {
+  const seconds = Math.round(timestamp - Date.now() / 1000);
+  const abs = Math.abs(seconds);
+  if (abs >= 7 * 86400) {
+    return fallback;
+  }
+  const rtf = new Intl.RelativeTimeFormat(document.documentElement.lang || undefined, { numeric: "auto", style: "short" });
+  if (abs < 60) return rtf.format(0, "second");
+  if (abs < 3600) return rtf.format(Math.round(seconds / 60), "minute");
+  if (abs < 86400) return rtf.format(Math.round(seconds / 3600), "hour");
+  return rtf.format(Math.round(seconds / 86400), "day");
+};
+
 const NotificationItem = (props) => {
   const { t } = useTranslation();
   const { dateFormat, timeFormat } = usePrefCache();
@@ -184,7 +202,6 @@ const NotificationItem = (props) => {
   const { attachment } = notification;
   const date = formatDateTime(notification.time, dateFormat, timeFormat);
   const otherTags = unmatchedTags(notification.tags);
-  const tags = otherTags.length > 0 ? otherTags.join(", ") : null;
   const handleDelete = async () => {
     console.log(`[Notifications] Deleting notification ${notification.id}`);
     await subscriptionManager.deleteNotification(notification.id);
@@ -203,62 +220,70 @@ const NotificationItem = (props) => {
   const hasUserActions = notification.actions && notification.actions.length > 0;
   const showActions = hasAttachmentActions || hasClickAction || hasUserActions;
 
+  const priorityColor = { 4: "warning.main", 5: "error.main" }[notification.priority];
+
   return (
-    <Card sx={{ padding: 1 }} role="listitem" aria-label={t("notifications_list_item")}>
+    <Card sx={{ position: "relative" }} role="listitem" aria-label={t("notifications_list_item")}>
+      {priorityColor && <Box aria-hidden sx={{ position: "absolute", inset: "0 auto 0 0", width: 4, bgcolor: priorityColor }} />}
       <CardContent>
-        <Tooltip title={t("notifications_delete")} enterDelay={500}>
-          <IconButton onClick={handleDelete} sx={{ float: "right", marginRight: -1, marginTop: -1 }} aria-label={t("notifications_delete")}>
-            <CloseIcon />
-          </IconButton>
-        </Tooltip>
-        {notification.new === 1 && (
-          <Tooltip title={t("notifications_mark_read")} enterDelay={500}>
-            <IconButton
-              onClick={handleMarkRead}
-              sx={{ float: "right", marginRight: -0.5, marginTop: -1 }}
-              aria-label={t("notifications_mark_read")}
-            >
-              <CheckIcon />
-            </IconButton>
-          </Tooltip>
-        )}
-        <Typography sx={{ fontSize: 14 }} color="text.secondary">
-          {date}
-          {[1, 2, 4, 5].includes(notification.priority) && (
-            <img
-              src={priorityFiles[notification.priority]}
-              alt={t("notifications_priority_x", {
-                priority: notification.priority,
-              })}
-              style={{ verticalAlign: "bottom" }}
-            />
-          )}
-          {notification.new === 1 && (
-            <svg
-              style={{ width: "8px", height: "8px", marginLeft: "4px" }}
-              viewBox="0 0 100 100"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-label={t("notifications_new_indicator")}
-            >
-              <circle cx="50" cy="50" r="50" fill="#338574" />
-            </svg>
-          )}
-        </Typography>
-        {notification.title && (
-          <Typography variant="h5" component="div" role="rowheader">
-            {formatTitle(notification)}
-          </Typography>
-        )}
-        <Typography variant="body1" sx={{ whiteSpace: "pre-line", overflowX: "auto" }}>
-          <NotificationBody notification={notification} />
-          {maybeActionErrors(notification)}
-        </Typography>
-        {attachment && <Attachment attachment={attachment} />}
-        {tags && (
-          <Typography sx={{ fontSize: 14 }} color="text.secondary">
-            {t("notifications_tags")}: {tags}
-          </Typography>
-        )}
+        <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start" }}>
+          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+            <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", color: "text.secondary", fontSize: 13 }}>
+              {notification.new === 1 && (
+                <Box
+                  component="span"
+                  aria-label={t("notifications_new_indicator")}
+                  sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "primary.main", flexShrink: 0 }}
+                />
+              )}
+              <Tooltip title={date} enterDelay={300}>
+                <Typography component="span" sx={{ fontSize: 13 }} color="text.secondary">
+                  {formatRelativeTime(notification.time, date)}
+                </Typography>
+              </Tooltip>
+              {[1, 2, 4, 5].includes(notification.priority) && (
+                <img
+                  src={priorityFiles[notification.priority]}
+                  alt={t("notifications_priority_x", {
+                    priority: notification.priority,
+                  })}
+                  style={{ height: 18 }}
+                />
+              )}
+            </Stack>
+            {notification.title && (
+              <Typography variant="h5" component="div" role="rowheader" sx={{ mt: 0.75 }}>
+                {formatTitle(notification)}
+              </Typography>
+            )}
+            <Typography variant="body1" sx={{ mt: 0.5, whiteSpace: "pre-line", overflowX: "auto", overflowWrap: "anywhere" }}>
+              <NotificationBody notification={notification} />
+              {maybeActionErrors(notification)}
+            </Typography>
+            {attachment && <Attachment attachment={attachment} />}
+            {otherTags.length > 0 && (
+              <Stack direction="row" useFlexGap spacing={0.75} sx={{ mt: 1.5, flexWrap: "wrap" }} aria-label={t("notifications_tags")}>
+                {otherTags.map((tag) => (
+                  <Chip key={tag} label={tag} size="small" />
+                ))}
+              </Stack>
+            )}
+          </Box>
+          <Stack direction="row" sx={{ mt: -0.75, mr: -1, flexShrink: 0, opacity: 0.7, "&:hover": { opacity: 1 } }}>
+            {notification.new === 1 && (
+              <Tooltip title={t("notifications_mark_read")} enterDelay={500}>
+                <IconButton size="small" onClick={handleMarkRead} aria-label={t("notifications_mark_read")}>
+                  <CheckIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
+            <Tooltip title={t("notifications_delete")} enterDelay={500}>
+              <IconButton size="small" onClick={handleDelete} aria-label={t("notifications_delete")}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Stack>
+        </Stack>
       </CardContent>
       {showActions && (
         <CardActions sx={{ paddingTop: 0 }}>
