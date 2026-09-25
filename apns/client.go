@@ -72,6 +72,12 @@ func (e *Error) Unregistered() bool {
 	return e.StatusCode == http.StatusGone
 }
 
+// Misconfigured reports whether the rejection usually stems from server or app configuration (wrong bundle ID,
+// sandbox token sent to production) rather than the app having been removed from the device.
+func (e *Error) Misconfigured() bool {
+	return e.Reason == "BadDeviceToken" || e.Reason == "DeviceTokenNotForTopic"
+}
+
 // Client sends notifications to APNs over HTTP/2 using token-based (.p8) authentication.
 type Client struct {
 	key           *ecdsa.PrivateKey
