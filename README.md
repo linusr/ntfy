@@ -2,7 +2,7 @@
 
 A fork of [ntfy](https://github.com/binwiederhier/ntfy) that delivers notifications directly to iOS through Apple Push
 Notification service (APNs), without Firebase or a relay through ntfy.sh. It pairs with
-[ntfy-ios](https://github.com/linusr/ntfy-ios), a native iOS and watchOS client.
+[Alai](https://github.com/linusr/ntfy-ios), a native iOS and watchOS client.
 
 Everything else is upstream ntfy; see the [ntfy documentation](https://docs.ntfy.sh) for publishing, subscribing,
 access control and configuration.
@@ -13,7 +13,7 @@ access control and configuration.
 |---|---|---|
 | iOS delivery from a self-hosted server | Poll request relayed through ntfy.sh and Firebase | Direct to APNs with your own auth key |
 | Message content in push | `New message`; the app fetches the content | Full message, or IDs only with `apns-payload: minimal` |
-| iOS app | Official ntfy app | [ntfy-ios](https://github.com/linusr/ntfy-ios), built and signed by your Apple Developer team |
+| iOS app | Official ntfy app | [Alai](https://github.com/linusr/ntfy-ios), built and signed by your Apple Developer team |
 
 APNs delivery requires an [Apple Developer Program](https://developer.apple.com/programs/) membership, since pushes
 must be signed by the team that owns the app. Changes live on the [`apns`](https://github.com/linusr/ntfy/tree/apns)
@@ -23,7 +23,7 @@ branch; `main` mirrors upstream.
 
 - APNs support is opt-in: without `apns-key-file`, the server behaves as upstream ntfy.
 - Android, web, CLI and the official iOS app (via `upstream-base-url`) work unchanged.
-- [ntfy-ios](https://github.com/linusr/ntfy-ios) also works with upstream servers, without instant push, since upstream
+- [Alai](https://github.com/linusr/ntfy-ios) also works with upstream servers, without instant push, since upstream
   has no `/v1/apns` endpoint.
 
 The change is self-contained (the `apns` package, the `/v1/apns` endpoints and `apns-*` options) and is a candidate for
@@ -60,8 +60,8 @@ be built by the same team whose key the server uses.
 
 ### 1. Register the app
 
-The app's bundle ID (e.g. `me.4vr.ntfy`) must exist under your team with the Push Notifications capability. Building
-[ntfy-ios](https://github.com/linusr/ntfy-ios) to a device with automatic signing registers it; otherwise add it under
+The app's bundle ID (e.g. `me.4vr.alai`) must exist under your team with the Push Notifications capability. Building
+[Alai](https://github.com/linusr/ntfy-ios) to a device with automatic signing registers it; otherwise add it under
 *Certificates, Identifiers & Profiles → Identifiers*.
 
 ### 2. Create an APNs auth key
@@ -83,7 +83,7 @@ base-url: "https://ntfy.example.com"
 apns-key-file: "/etc/ntfy/AuthKey_ABC123DEFG.p8"
 apns-key-id: "ABC123DEFG"
 apns-team-id: "DEF123GHIJ"
-apns-bundle-id: "me.4vr.ntfy"
+apns-bundle-id: "me.4vr.alai"
 apns-file: "/var/cache/ntfy/apns.db"   # not needed with database-url
 # apns-payload: "minimal"              # send only message IDs through Apple
 ```
