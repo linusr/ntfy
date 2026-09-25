@@ -1,33 +1,35 @@
-# ntfy with native APNs
+# Alai server
 
-A fork of [ntfy](https://github.com/binwiederhier/ntfy) that delivers notifications directly to iOS through Apple Push
-Notification service (APNs), without Firebase or a relay through ntfy.sh. It pairs with
-[Alai](https://github.com/linusr/ntfy-ios), a native iOS and watchOS client.
+A self-hosted push notification server, and the backend for the [Alai](https://github.com/linusr/ntfy-ios) iOS and
+watchOS app. It is a hard fork of [ntfy](https://github.com/binwiederhier/ntfy) that delivers to iOS directly through
+Apple Push Notification service (APNs) and ships a redesigned web app.
 
-Everything else is upstream ntfy; see the [ntfy documentation](https://docs.ntfy.sh) for publishing, subscribing,
-access control and configuration.
+The HTTP API, message format and `ntfy` CLI stay compatible with ntfy, so ntfy clients, integrations and the
+[ntfy documentation](https://docs.ntfy.sh) for publishing and subscribing apply unchanged.
 
-## Differences from upstream
+## Differences from ntfy
 
-| | Upstream ntfy | This fork |
+| | ntfy | This fork |
 |---|---|---|
 | iOS delivery from a self-hosted server | Poll request relayed through ntfy.sh and Firebase | Direct to APNs with your own auth key |
 | Message content in push | `New message`; the app fetches the content | Full message, or IDs only with `apns-payload: minimal` |
 | iOS app | Official ntfy app | [Alai](https://github.com/linusr/ntfy-ios), built and signed by your Apple Developer team |
+| Web app | ntfy design | Redesigned, branded Alai |
 
 APNs delivery requires an [Apple Developer Program](https://developer.apple.com/programs/) membership, since pushes
-must be signed by the team that owns the app. Changes live on the [`apns`](https://github.com/linusr/ntfy/tree/apns)
-branch; `main` mirrors upstream.
+must be signed by the team that owns the app.
+
+## Upstream
+
+The fork split from ntfy at v2.28.0 (`fork-base` tag). Upstream changes, security fixes first, are cherry-picked
+selectively rather than merged; [UPSTREAM.md](UPSTREAM.md) holds the policy and the log of what was taken.
 
 ## Compatibility
 
-- APNs support is opt-in: without `apns-key-file`, the server behaves as upstream ntfy.
-- Android, web, CLI and the official iOS app (via `upstream-base-url`) work unchanged.
-- [Alai](https://github.com/linusr/ntfy-ios) also works with upstream servers, without instant push, since upstream
-  has no `/v1/apns` endpoint.
-
-The change is self-contained (the `apns` package, the `/v1/apns` endpoints and `apns-*` options) and is a candidate for
-an upstream pull request, which would bring instant push to stock ntfy servers. It is not currently proposed.
+- APNs support is opt-in: without `apns-key-file`, the server behaves as ntfy.
+- The ntfy Android app, the web app, the CLI and the official ntfy iOS app (via `upstream-base-url`) work unchanged.
+- [Alai](https://github.com/linusr/ntfy-ios) also works with stock ntfy servers, without instant push, since they
+  have no `/v1/apns` endpoint.
 
 ## Running
 
@@ -35,23 +37,38 @@ Images for `linux/amd64` and `linux/arm64` are published to `ghcr.io/linusr/ntfy
 
 | Tag | Source |
 |---|---|
-| `apns` | Latest commit on the `apns` branch |
+| `main` | Latest commit on `main` |
 | `sha-<commit>` | A specific commit |
 | `<version>`, `latest` | `fork-v<version>` release tags |
 
-```yaml
-services:
-  ntfy:
-    image: ghcr.io/linusr/ntfy:apns
-    command: serve
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    volumes:
-      - /etc/ntfy:/etc/ntfy              # server.yml and the APNs auth key
-      - /var/cache/ntfy:/var/cache/ntfy  # message cache, device registrations, attachments
-      - /var/lib/ntfy:/var/lib/ntfy      # user database
+### Podman with systemd
+
+[`deploy/podman/alai.container`](deploy/podman/alai.container) is a [Quadlet](https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html)
+unit: systemd generates `alai.service` from it. It mounts the standard ntfy paths, so configuration and data from a
+package install are used in place.
+
+```sh
+install -m 0644 deploy/podman/alai.container /etc/containers/systemd/
+systemctl daemon-reload
+systemctl start alai
+systemctl enable --now podman-auto-update.timer   # pull new images of the same tag daily
 ```
+
+| Path | Contents |
+|---|---|
+| `/etc/ntfy` | `server.yml` and the APNs auth key (mounted read-only) |
+| `/var/cache/ntfy` | Message cache, APNs device registrations, attachments |
+| `/var/lib/ntfy` | User database |
+
+The container listens on `127.0.0.1:2586` (`PublishPort`); set it to the address your reverse proxy forwards to.
+Administration runs inside the container, e.g. `podman exec alai ntfy user list`.
+
+### Migrating from the Debian package
+
+[`deploy/podman/migrate-from-deb.sh`](deploy/podman/migrate-from-deb.sh) backs up the configuration and data, stops
+and disables `ntfy.service`, installs the Quadlet unit and starts `alai.service`, then checks its health. The package
+stays installed until you remove it with `apt remove ntfy` (not `purge`, which deletes `/etc/ntfy`); remove its APT
+source as well so upgrades cannot reinstall the service.
 
 ## APNs setup
 
@@ -75,8 +92,8 @@ One key serves every app of the team, in both the sandbox and production environ
 
 ### 3. Configure the server
 
-Place the key where the server can read it, e.g. `/etc/ntfy/AuthKey_ABC123DEFG.p8` with mode `0600` owned by the ntfy
-user, and add to `server.yml`:
+Place the key in `/etc/ntfy`, e.g. `/etc/ntfy/AuthKey_ABC123DEFG.p8` with mode `0600` (the container reads it as
+root; for a package install, make it owned by the `ntfy` user), and add to `server.yml`:
 
 ```yaml
 base-url: "https://ntfy.example.com"
@@ -127,17 +144,9 @@ go test ./apns/ ./server/ -run APNS
 
 `Dockerfile-build` builds the complete image including the web app and docs.
 
-## Syncing with upstream
-
-```sh
-git fetch upstream
-git checkout main && git merge --ff-only upstream/main && git push origin main
-git checkout apns && git rebase main && git push --force-with-lease origin apns
-```
-
 ## License
-ntfy is made by [Philipp C. Heckel](https://heckel.io) and its [contributors](https://github.com/binwiederhier/ntfy/graphs/contributors).
-This fork keeps its licensing: the project is dual licensed under the [Apache License 2.0](LICENSE) and the [GPLv2 License](LICENSE.GPLv2).
+This fork is based on ntfy, made by [Philipp C. Heckel](https://heckel.io) and its
+[contributors](https://github.com/binwiederhier/ntfy/graphs/contributors), and keeps its licensing: the project is dual licensed under the [Apache License 2.0](LICENSE) and the [GPLv2 License](LICENSE.GPLv2).
 
 Third-party libraries and resources:
 * [github.com/urfave/cli](https://github.com/urfave/cli) (MIT) is used to drive the CLI
