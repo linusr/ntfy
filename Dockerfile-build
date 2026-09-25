@@ -38,6 +38,10 @@ ADD ./client ./client
 ADD ./cmd ./cmd
 ADD ./log ./log
 ADD ./server ./server
+ADD ./apns ./apns
+ADD ./ban ./ban
+ADD ./metrics ./metrics
+ADD ./twilio ./twilio
 ADD ./user ./user
 ADD ./util ./util
 ADD ./payments ./payments
@@ -49,7 +53,7 @@ ADD ./attachment ./attachment
 ADD ./mail ./mail
 ADD ./s3 ./s3
 ADD ./action ./action
-ADD ./template/gotext ./template/gotext
+ADD ./template ./template
 
 RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build make VERSION=$VERSION COMMIT=$COMMIT cli-linux-server
 
