@@ -1,0 +1,33 @@
+# Podman Quadlet unit for the Alai server (ntfy-compatible).
+# Install to /etc/containers/systemd/alai.container, then: systemctl daemon-reload && systemctl start alai
+# Quadlet generates alai.service from this file; `systemctl status alai` and `journalctl -u alai` work as usual.
+
+[Unit]
+Description=Alai notification server
+Wants=network-online.target
+After=network-online.target
+
+[Container]
+ContainerName=alai
+Image=ghcr.io/linusr/ntfy:main
+# Pulls newer images of the same tag when podman-auto-update.timer runs
+AutoUpdate=registry
+# The container always listens on :80, whatever server.yml says; the host side is set by PublishPort
+Exec=serve --listen-http=:80
+Volume=/etc/ntfy:/etc/ntfy:ro
+Volume=/var/cache/ntfy:/var/cache/ntfy
+Volume=/var/lib/ntfy:/var/lib/ntfy
+# Match the address your reverse proxy forwards to
+PublishPort=127.0.0.1:2586:80
+Environment=TZ=Etc/UTC
+HealthCmd=wget -q --spider http://127.0.0.1/v1/health
+HealthInterval=1m
+HealthRetries=3
+HealthStartPeriod=20s
+
+[Service]
+Restart=always
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

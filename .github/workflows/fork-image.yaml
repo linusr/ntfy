@@ -1,7 +1,7 @@
 name: fork-image
 on:
   push:
-    branches: [ apns ]
+    branches: [ main ]
     tags: [ 'fork-v*' ]
   workflow_dispatch:
 permissions:
