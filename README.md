@@ -19,6 +19,16 @@ APNs delivery requires an [Apple Developer Program](https://developer.apple.com/
 must be signed by the team that owns the app. Changes live on the [`apns`](https://github.com/linusr/ntfy/tree/apns)
 branch; `main` mirrors upstream.
 
+## Compatibility
+
+- APNs support is opt-in: without `apns-key-file`, the server behaves as upstream ntfy.
+- Android, web, CLI and the official iOS app (via `upstream-base-url`) work unchanged.
+- [ntfy-ios](https://github.com/linusr/ntfy-ios) also works with upstream servers, without instant push, since upstream
+  has no `/v1/apns` endpoint.
+
+The change is self-contained (the `apns` package, the `/v1/apns` endpoints and `apns-*` options) and is a candidate for
+an upstream pull request, which would bring instant push to stock ntfy servers. It is not currently proposed.
+
 ## Running
 
 Images for `linux/amd64` and `linux/arm64` are published to `ghcr.io/linusr/ntfy`:
