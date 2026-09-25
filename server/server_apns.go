@@ -171,7 +171,12 @@ func (s *Server) publishToAPNSDevices(v *visitor, m *model.Message) {
 		metrics.APNSPublishedFailure.Inc()
 		var apnsErr *apns.Error
 		if errors.As(err, &apnsErr) && apnsErr.Unregistered() {
-			logvm(v, m).Tag(tagAPNS).With(device).Err(err).Debug("APNs device token no longer valid, removing device")
+			ev := logvm(v, m).Tag(tagAPNS).With(device).Err(err)
+			if apnsErr.Misconfigured() {
+				ev.Warn("APNs rejected device token, removing device; check apns-bundle-id and the app's build environment")
+			} else {
+				ev.Debug("APNs device token no longer valid, removing device")
+			}
 			if err := s.apnsStore.RemoveDeviceByToken(device.Token); err != nil {
 				logvm(v, m).Tag(tagAPNS).With(device).Err(err).Warn("Unable to remove APNs device")
 			}

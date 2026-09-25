@@ -53,10 +53,30 @@ services:
       - /var/lib/ntfy:/var/lib/ntfy      # user database
 ```
 
-## APNs configuration
+## APNs setup
 
-Create an APNs auth key in the Apple Developer portal (*Certificates, Identifiers & Profiles → Keys*) and add to
-`server.yml`:
+APNs delivery needs an [Apple Developer Program](https://developer.apple.com/programs/) membership, and the iOS app must
+be built by the same team whose key the server uses.
+
+### 1. Register the app
+
+The app's bundle ID (e.g. `me.4vr.ntfy`) must exist under your team with the Push Notifications capability. Building
+[ntfy-ios](https://github.com/linusr/ntfy-ios) to a device with automatic signing registers it; otherwise add it under
+*Certificates, Identifiers & Profiles → Identifiers*.
+
+### 2. Create an APNs auth key
+
+1. Open *Certificates, Identifiers & Profiles → Keys* and click **+**.
+2. Name the key, enable **Apple Push Notifications service (APNs)** and register it.
+3. Download `AuthKey_<KEYID>.p8`. Apple offers the download only once.
+4. Note the **Key ID** (shown next to the key) and your **Team ID** (top right of the portal, or *Membership details*).
+
+One key serves every app of the team, in both the sandbox and production environments, and does not expire.
+
+### 3. Configure the server
+
+Place the key where the server can read it, e.g. `/etc/ntfy/AuthKey_ABC123DEFG.p8` with mode `0600` owned by the ntfy
+user, and add to `server.yml`:
 
 ```yaml
 base-url: "https://ntfy.example.com"
@@ -64,12 +84,37 @@ apns-key-file: "/etc/ntfy/AuthKey_ABC123DEFG.p8"
 apns-key-id: "ABC123DEFG"
 apns-team-id: "DEF123GHIJ"
 apns-bundle-id: "me.4vr.ntfy"
-apns-file: "/var/cache/ntfy/apns.db"
-# apns-payload: "minimal"   # send only message IDs through Apple
+apns-file: "/var/cache/ntfy/apns.db"   # not needed with database-url
+# apns-payload: "minimal"              # send only message IDs through Apple
 ```
 
-Devices register their topics with `POST /v1/apns`. Priorities map to iOS interruption levels, messages sharing a
-sequence ID replace each other, and deletes withdraw delivered notifications. The full reference is in the
+Restart the server. It refuses to start if any required option is missing or the key cannot be parsed.
+
+### 4. Verify
+
+1. Open the app and subscribe to a topic. *Settings → Servers* shows **Instant delivery** once the device registered.
+2. Publish a test message: `curl -H "Priority: high" -d "Hello from APNs" https://ntfy.example.com/mytopic`
+3. With `log-level: debug`, the server logs `Publishing to 1 APNs device(s)` for each message.
+
+### Troubleshooting
+
+Delivery failures are logged at warning level with the reason Apple returned. A device rejected with
+`BadDeviceToken` or `DeviceTokenNotForTopic` is removed and re-registers on the next app launch, so fix the
+configuration before reopening the app.
+
+| Reason | Cause |
+|---|---|
+| `InvalidProviderToken` | Key ID or Team ID does not match the key file |
+| `DeviceTokenNotForTopic` | `apns-bundle-id` differs from the installed app's bundle ID |
+| `BadDeviceToken` | Token from the other environment: Xcode debug builds use the sandbox, TestFlight and App Store builds use production. The app sends its environment when registering, so this indicates a mismatched build configuration |
+| `TopicDisallowed` | The bundle ID lacks the Push Notifications capability |
+| `TooManyRequests` | Apple is throttling this device; delivery resumes on its own |
+
+Devices whose app was deleted are removed silently. Settings in the app shows **APNs not enabled on server** when
+`/v1/apns` returns 404, i.e. when `apns-key-file` is not set.
+
+Priorities map to iOS interruption levels, messages sharing a sequence ID replace each other, and deletes withdraw
+delivered notifications. The full reference is in the
 [APNs section of the configuration docs](docs/config.md#apple-push-notification-service-apns).
 
 ## Building

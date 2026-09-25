@@ -138,6 +138,8 @@ func TestClientSendUnregistered(t *testing.T) {
 	require.Equal(t, http.StatusGone, apnsErr.StatusCode)
 	require.Equal(t, "Unregistered", apnsErr.Reason)
 	require.True(t, apnsErr.Unregistered())
+	require.False(t, apnsErr.Misconfigured())
+	require.True(t, (&apns.Error{StatusCode: http.StatusBadRequest, Reason: "DeviceTokenNotForTopic"}).Misconfigured())
 }
 
 func TestClientSendTransientErrorIsNotUnregistered(t *testing.T) {
