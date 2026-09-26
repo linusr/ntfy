@@ -1,12 +1,11 @@
 import * as React from "react";
 import { useState } from "react";
-import { Paper, IconButton, TextField, Portal, Snackbar, alpha } from "@mui/material";
-import SendIcon from "@mui/icons-material/Send";
-import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import { ChevronUp, SendHorizontal } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import PublishDialog from "./PublishDialog";
 import api from "../app/Api";
-import Navigation from "./Navigation";
+import IconButton from "./ui/IconButton";
+import { useToast } from "./ui/Toast";
 
 const Messaging = (props) => {
   const [message, setMessage] = useState("");
@@ -49,7 +48,7 @@ const Messaging = (props) => {
         />
       )}
       <PublishDialog
-        key={`publishDialog${dialogKey}`} // Resets dialog when canceled/closed
+        key={`publishDialog${dialogKey}`} // A new key resets the form after close
         openMode={dialogOpenMode}
         baseUrl={subscription?.baseUrl ?? config.base_url}
         topic={subscription?.topic ?? ""}
@@ -66,14 +65,18 @@ const Messaging = (props) => {
 
 const MessageBar = (props) => {
   const { t } = useTranslation();
+  const toast = useToast();
   const { subscription } = props;
-  const [snackOpen, setSnackOpen] = useState(false);
+
   const handleSendClick = async () => {
+    if (!props.message.trim()) {
+      return;
+    }
     try {
       await api.publish(subscription.baseUrl, subscription.topic, props.message);
     } catch (e) {
       console.log(`[MessageBar] Error publishing message`, e);
-      setSnackOpen(true);
+      toast(t("message_bar_error_publishing"));
     }
     props.onMessageChange("");
   };
@@ -87,59 +90,39 @@ const MessageBar = (props) => {
   };
 
   return (
-    <Paper
-      elevation={0}
-      sx={{
-        display: "flex",
-        alignItems: "center",
-        gap: 1,
-        position: "fixed",
-        bottom: 0,
-        right: 0,
-        px: 2,
-        py: 1.5,
-        width: { xs: "100%", sm: `calc(100% - ${Navigation.width}px)` },
-        backgroundColor: ({ palette }) => alpha(palette.background.paper, 0.85),
-        backdropFilter: "saturate(180%) blur(16px)",
-        borderTop: 1,
-        borderColor: "divider",
-      }}
-    >
-      <IconButton color="inherit" size="large" edge="start" onClick={props.onOpenDialogClick} aria-label={t("message_bar_show_dialog")}>
-        <KeyboardArrowUpIcon />
-      </IconButton>
-      <TextField
-        autoFocus
-        size="small"
-        placeholder={t("message_bar_type_message")}
-        aria-label={t("message_bar_type_message")}
-        role="textbox"
-        type="text"
-        fullWidth
-        variant="outlined"
-        sx={{ "& .MuiOutlinedInput-root": { borderRadius: "999px", bgcolor: "background.default", pl: 1 } }}
-        value={props.message}
-        onChange={(ev) => props.onMessageChange(ev.target.value)}
-        onKeyPress={(ev) => {
-          if (ev.key === "Enter") {
-            ev.preventDefault();
-            handleSendClick();
-          }
-        }}
-        onPaste={handlePaste}
-      />
-      <IconButton color="primary" size="large" edge="end" onClick={handleSendClick} aria-label={t("message_bar_publish")}>
-        <SendIcon />
-      </IconButton>
-      <Portal>
-        <Snackbar
-          open={snackOpen}
-          autoHideDuration={3000}
-          onClose={() => setSnackOpen(false)}
-          message={t("message_bar_error_publishing")}
+    <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface/80 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl backdrop-saturate-150 sm:left-[272px] sm:px-6">
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-2">
+        <IconButton label={t("message_bar_show_dialog")} onClick={props.onOpenDialogClick}>
+          <ChevronUp className="size-5" />
+        </IconButton>
+        <input
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
+          type="text"
+          placeholder={t("message_bar_type_message")}
+          aria-label={t("message_bar_type_message")}
+          value={props.message}
+          onChange={(ev) => props.onMessageChange(ev.target.value)}
+          onKeyDown={(ev) => {
+            if (ev.key === "Enter" && !ev.nativeEvent.isComposing) {
+              ev.preventDefault();
+              handleSendClick();
+            }
+          }}
+          onPaste={handlePaste}
+          className="h-10 min-w-0 flex-1 rounded-full border border-border-strong bg-bg px-4 text-sm placeholder:text-muted/70 focus:border-accent focus:outline-none focus:ring-3 focus:ring-accent-soft"
         />
-      </Portal>
-    </Paper>
+        <button
+          type="button"
+          onClick={handleSendClick}
+          disabled={!props.message.trim()}
+          aria-label={t("message_bar_publish")}
+          className="flex size-10 shrink-0 items-center justify-center rounded-full bg-accent text-accent-fg transition-colors hover:bg-accent-hover disabled:bg-surface-2 disabled:text-muted"
+        >
+          <SendHorizontal className="size-[18px]" />
+        </button>
+      </div>
+    </div>
   );
 };
 

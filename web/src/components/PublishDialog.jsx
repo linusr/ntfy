@@ -1,54 +1,30 @@
 import * as React from "react";
-import { Suspense, lazy, useContext, useEffect, useRef, useState } from "react";
-import {
-  Checkbox,
-  Chip,
-  FormControl,
-  FormControlLabel,
-  InputLabel,
-  Link,
-  Select,
-  Tooltip,
-  useMediaQuery,
-  TextField,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  Button,
-  Typography,
-  IconButton,
-  MenuItem,
-  Box,
-  useTheme,
-} from "@mui/material";
-import InsertEmoticonIcon from "@mui/icons-material/InsertEmoticon";
-import Close from "@mui/icons-material/Close";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import * as Popover from "@radix-ui/react-popover";
+import { Clock, Globe, Link2, Mail, Paperclip, Plus, Smile, Upload, X } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
-import priority1 from "../img/priority-1.svg";
-import priority2 from "../img/priority-2.svg";
-import priority3 from "../img/priority-3.svg";
-import priority4 from "../img/priority-4.svg";
-import priority5 from "../img/priority-5.svg";
 import { formatBytes, maybeWithAuth, topicShortUrl, topicUrl, validTopic, validUrl } from "../app/utils";
 import { imageRegex } from "../app/notificationUtils";
 import AttachmentIcon from "./AttachmentIcon";
-import DialogFooter from "./DialogFooter";
 import api from "../app/Api";
 import userManager from "../app/UserManager";
 import session from "../app/Session";
 import routes from "./routes";
 import accountApi from "../app/AccountApi";
 import { UnauthorizedError } from "../app/errors";
-import AccountContext from "./AccountContext";
+import { Dialog, DialogContent } from "./ui/Dialog";
+import { Field, Input, Textarea } from "./ui/Field";
+import Button from "./ui/Button";
+import IconButton from "./ui/IconButton";
+import { Spinner } from "./ui/Primitives";
+import cn from "./ui/cn";
 
-// Loaded lazily so the full emoji dataset (~300 KB) is only fetched when the publish
-// dialog is opened, not in the initial app bundle (see EmojiPicker.jsx).
+// Loaded lazily so the emoji dataset (~300 KB) is only fetched when the picker is opened.
 const EmojiPicker = lazy(() => import("./EmojiPicker"));
 
 const PublishDialog = (props) => {
-  const theme = useTheme();
   const { t } = useTranslation();
-  const { account } = useContext(AccountContext);
   const [baseUrl, setBaseUrl] = useState("");
   const [topic, setTopic] = useState("");
   const [message, setMessage] = useState("");
@@ -62,7 +38,6 @@ const PublishDialog = (props) => {
   const [filename, setFilename] = useState("");
   const [filenameEdited, setFilenameEdited] = useState(false);
   const [email, setEmail] = useState("");
-  const [call, setCall] = useState("");
   const [delay, setDelay] = useState("");
   const [publishAnother, setPublishAnother] = useState(false);
   const [markdownEnabled, setMarkdownEnabled] = useState(false);
@@ -71,7 +46,6 @@ const PublishDialog = (props) => {
   const [showClickUrl, setShowClickUrl] = useState(false);
   const [showAttachUrl, setShowAttachUrl] = useState(false);
   const [showEmail, setShowEmail] = useState(false);
-  const [showCall, setShowCall] = useState(false);
   const [showDelay, setShowDelay] = useState(false);
 
   const showAttachFile = !!attachFile && !showAttachUrl;
@@ -79,76 +53,52 @@ const PublishDialog = (props) => {
   const [attachFileError, setAttachFileError] = useState("");
 
   const [activeRequest, setActiveRequest] = useState(null);
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(null);
   const disabled = !!activeRequest;
 
-  const [emojiPickerAnchorEl, setEmojiPickerAnchorEl] = useState(null);
-
   const [dropZone, setDropZone] = useState(false);
-  const [sendButtonEnabled, setSendButtonEnabled] = useState(true);
+  const sendButtonEnabled = validUrl(baseUrl) && validTopic(topic) && !attachFileError;
 
   const open = !!props.openMode;
-  const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
 
   useEffect(() => {
-    window.addEventListener("dragenter", () => {
+    const handleDragEnter = () => {
       props.onDragEnter();
       setDropZone(true);
-    });
+    };
+    window.addEventListener("dragenter", handleDragEnter);
+    return () => window.removeEventListener("dragenter", handleDragEnter);
   }, []);
 
   useEffect(() => {
     setBaseUrl(props.baseUrl);
     setTopic(props.topic);
     setShowTopicUrl(!props.baseUrl || !props.topic);
-    setMessageFocused(!!props.topic); // Focus message only if topic is set
+    setMessageFocused(!!props.topic);
   }, [props.baseUrl, props.topic]);
-
-  useEffect(() => {
-    const valid = validUrl(baseUrl) && validTopic(topic) && !attachFileError;
-    setSendButtonEnabled(valid);
-  }, [baseUrl, topic, attachFileError]);
 
   useEffect(() => {
     setMessage(props.message);
   }, [props.message]);
 
   const updateBaseUrl = (newVal) => {
-    if (validUrl(newVal)) {
-      setBaseUrl(newVal.replace(/\/$/, "")); // strip traililng slash after https?://
-    } else {
-      setBaseUrl(newVal);
-    }
+    setBaseUrl(validUrl(newVal) ? newVal.replace(/\/$/, "") : newVal);
   };
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (ev) => {
+    ev?.preventDefault();
+    if (!sendButtonEnabled || disabled) {
+      return;
+    }
     const url = new URL(topicUrl(baseUrl, topic));
-    if (title.trim()) {
-      url.searchParams.append("title", title.trim());
-    }
-    if (tags.trim()) {
-      url.searchParams.append("tags", tags.trim());
-    }
-    if (priority && priority !== 3) {
+    const params = { title, tags, click: clickUrl, attach: attachUrl, filename, email, delay };
+    Object.entries(params).forEach(([key, value]) => {
+      if (value.trim()) {
+        url.searchParams.append(key, value.trim());
+      }
+    });
+    if (priority !== 3) {
       url.searchParams.append("priority", priority.toString());
-    }
-    if (clickUrl.trim()) {
-      url.searchParams.append("click", clickUrl.trim());
-    }
-    if (attachUrl.trim()) {
-      url.searchParams.append("attach", attachUrl.trim());
-    }
-    if (filename.trim()) {
-      url.searchParams.append("filename", filename.trim());
-    }
-    if (email.trim()) {
-      url.searchParams.append("email", email.trim());
-    }
-    if (call.trim()) {
-      url.searchParams.append("call", call.trim());
-    }
-    if (delay.trim()) {
-      url.searchParams.append("delay", delay.trim());
     }
     if (attachFile && message.trim()) {
       url.searchParams.append("message", message.replaceAll("\n", "\\n").trim());
@@ -161,17 +111,17 @@ const PublishDialog = (props) => {
     try {
       const user = await userManager.get(baseUrl);
       const headers = maybeWithAuth({}, user);
-      const progressFn = (ev) => {
-        if (ev.loaded > 0 && ev.total > 0) {
-          setStatus(
-            t("publish_dialog_progress_uploading_detail", {
-              loaded: formatBytes(ev.loaded),
-              total: formatBytes(ev.total),
-              percent: Math.round((ev.loaded * 100.0) / ev.total),
+      const progressFn = (e) => {
+        if (e.loaded > 0 && e.total > 0) {
+          setStatus({
+            text: t("publish_dialog_progress_uploading_detail", {
+              loaded: formatBytes(e.loaded),
+              total: formatBytes(e.total),
+              percent: Math.round((e.loaded * 100.0) / e.total),
             }),
-          );
+          });
         } else {
-          setStatus(t("publish_dialog_progress_uploading"));
+          setStatus({ text: t("publish_dialog_progress_uploading") });
         }
       };
       const request = api.publishXHR(url, body, headers, progressFn);
@@ -180,11 +130,11 @@ const PublishDialog = (props) => {
       if (!publishAnother) {
         props.onClose();
       } else {
-        setStatus(t("publish_dialog_message_published"));
+        setStatus({ text: t("publish_dialog_message_published"), success: true });
         setActiveRequest(null);
       }
     } catch (e) {
-      setStatus(<Typography sx={{ color: "error.main", maxWidth: "400px" }}>{e}</Typography>);
+      setStatus({ text: typeof e === "string" ? e : (e?.message ?? String(e)), error: true });
       setActiveRequest(null);
     }
   };
@@ -204,17 +154,9 @@ const PublishDialog = (props) => {
           }),
         );
       } else if (fileSizeLimitReached) {
-        setAttachFileError(
-          t("publish_dialog_attachment_limits_file_reached", {
-            fileSizeLimit: formatBytes(fileSizeLimit),
-          }),
-        );
+        setAttachFileError(t("publish_dialog_attachment_limits_file_reached", { fileSizeLimit: formatBytes(fileSizeLimit) }));
       } else if (quotaReached) {
-        setAttachFileError(
-          t("publish_dialog_attachment_limits_quota_reached", {
-            remainingBytes: formatBytes(remainingBytes),
-          }),
-        );
+        setAttachFileError(t("publish_dialog_attachment_limits_quota_reached", { remainingBytes: formatBytes(remainingBytes) }));
       } else {
         setAttachFileError("");
       }
@@ -223,16 +165,15 @@ const PublishDialog = (props) => {
       if (e instanceof UnauthorizedError) {
         await session.resetAndRedirect(routes.login);
       } else {
-        setAttachFileError(""); // Reset error (rely on server-side checking)
+        setAttachFileError(""); // The server enforces limits on upload
       }
     }
   };
 
-  const handleAttachFileClick = () => {
-    attachFileInput.current.click();
-  };
-
   const updateAttachFile = async (file) => {
+    if (!file) {
+      return;
+    }
     setAttachFile(file);
     setFilename(file.name);
     props.onResetOpenMode();
@@ -252,10 +193,6 @@ const PublishDialog = (props) => {
     }
   };
 
-  const handleAttachFileChanged = async (ev) => {
-    await updateAttachFile(ev.target.files[0]);
-  };
-
   const handleAttachFileDrop = async (ev) => {
     ev.preventDefault();
     setDropZone(false);
@@ -265,712 +202,529 @@ const PublishDialog = (props) => {
   const handleAttachFileDragLeave = () => {
     setDropZone(false);
     if (props.openMode === PublishDialog.OPEN_MODE_DRAG) {
-      props.onClose(); // Only close dialog if it was not open before dragging file in
+      props.onClose(); // Only close when the dialog was opened by the drag itself
     }
-  };
-
-  const handleEmojiClick = (ev) => {
-    setEmojiPickerAnchorEl(ev.currentTarget);
   };
 
   const handleEmojiPick = (emoji) => {
     setTags((prevTags) => (prevTags.trim() ? `${prevTags.trim()}, ${emoji}` : emoji));
   };
 
-  const handleEmojiClose = () => {
-    setEmojiPickerAnchorEl(null);
+  const handleAttachUrlChange = (value) => {
+    setAttachUrl(value);
+    if (!filenameEdited) {
+      try {
+        const parts = new URL(value).pathname.split("/");
+        setFilename(parts[parts.length - 1]);
+      } catch (e) {
+        // Not a URL yet
+      }
+    }
   };
 
-  const priorities = {
-    1: { label: t("publish_dialog_priority_min"), file: priority1 },
-    2: { label: t("publish_dialog_priority_low"), file: priority2 },
-    3: { label: t("publish_dialog_priority_default"), file: priority3 },
-    4: { label: t("publish_dialog_priority_high"), file: priority4 },
-    5: { label: t("publish_dialog_priority_max"), file: priority5 },
-  };
+  const extras = [
+    { show: !showClickUrl, icon: Link2, label: t("publish_dialog_chip_click_label"), onClick: () => setShowClickUrl(true) },
+    { show: !showEmail, icon: Mail, label: t("publish_dialog_chip_email_label"), onClick: () => setShowEmail(true) },
+    {
+      show: !showAttachUrl && !showAttachFile,
+      icon: Paperclip,
+      label: t("publish_dialog_chip_attach_url_label"),
+      onClick: () => setShowAttachUrl(true),
+    },
+    {
+      show: !showAttachFile && !showAttachUrl,
+      icon: Upload,
+      label: t("publish_dialog_chip_attach_file_label"),
+      onClick: () => attachFileInput.current.click(),
+    },
+    { show: !showDelay, icon: Clock, label: t("publish_dialog_chip_delay_label"), onClick: () => setShowDelay(true) },
+    { show: !showTopicUrl, icon: Globe, label: t("publish_dialog_chip_topic_label"), onClick: () => setShowTopicUrl(true) },
+  ].filter((extra) => extra.show);
 
   return (
     <>
-      {dropZone && <DropArea onDrop={handleAttachFileDrop} onDragLeave={handleAttachFileDragLeave} />}
-      <Dialog maxWidth="md" open={open} onClose={props.onClose} fullScreen={fullScreen}>
-        <DialogTitle>
-          {baseUrl && topic
-            ? t("publish_dialog_title_topic", {
-                topic: topicShortUrl(baseUrl, topic),
-              })
-            : t("publish_dialog_title_no_topic")}
-        </DialogTitle>
-        <DialogContent>
-          {dropZone && <DropBox />}
-          {showTopicUrl && (
-            <ClosableRow
-              closable={!!props.baseUrl && !!props.topic}
-              disabled={disabled}
-              closeLabel={t("publish_dialog_topic_reset")}
-              onClose={() => {
-                setBaseUrl(props.baseUrl);
-                setTopic(props.topic);
-                setShowTopicUrl(false);
-              }}
-            >
-              <TextField
-                margin="dense"
-                label={t("publish_dialog_base_url_label")}
-                placeholder={t("publish_dialog_base_url_placeholder")}
-                value={baseUrl}
-                onChange={(ev) => updateBaseUrl(ev.target.value)}
+      {dropZone && open && <DropArea onDrop={handleAttachFileDrop} onDragLeave={handleAttachFileDragLeave} />}
+      <Dialog open={open} onOpenChange={(isOpen) => !isOpen && props.onClose()}>
+        <DialogContent
+          className="sm:max-w-2xl"
+          title={
+            baseUrl && topic
+              ? t("publish_dialog_title_topic", { topic: topicShortUrl(baseUrl, topic) })
+              : t("publish_dialog_title_no_topic")
+          }
+        >
+          <form id="publish-form" onSubmit={handleSubmit} className="relative flex flex-col gap-4">
+            {dropZone && <DropBox />}
+            {showTopicUrl && (
+              <ClosableRow
+                closable={!!props.baseUrl && !!props.topic}
                 disabled={disabled}
-                type="url"
-                variant="standard"
-                sx={{ flexGrow: 1, marginRight: 1 }}
-                slotProps={{
-                  htmlInput: {
-                    "aria-label": t("publish_dialog_base_url_label"),
-                  },
-                }}
-              />
-              <TextField
-                margin="dense"
-                label={t("publish_dialog_topic_label")}
-                placeholder={t("publish_dialog_topic_placeholder")}
-                value={topic}
-                onChange={(ev) => setTopic(ev.target.value)}
-                disabled={disabled}
-                type="text"
-                variant="standard"
-                autoFocus={!messageFocused}
-                sx={{ flexGrow: 1 }}
-                slotProps={{
-                  htmlInput: {
-                    "aria-label": t("publish_dialog_topic_label"),
-                  },
-                }}
-              />
-            </ClosableRow>
-          )}
-          <TextField
-            margin="dense"
-            label={t("publish_dialog_title_label")}
-            placeholder={t("publish_dialog_title_placeholder")}
-            value={title}
-            onChange={(ev) => setTitle(ev.target.value)}
-            disabled={disabled}
-            type="text"
-            fullWidth
-            variant="standard"
-            slotProps={{
-              htmlInput: {
-                "aria-label": t("publish_dialog_title_label"),
-              },
-            }}
-          />
-          <TextField
-            margin="dense"
-            label={t("publish_dialog_message_label")}
-            placeholder={t("publish_dialog_message_placeholder")}
-            value={message}
-            onChange={(ev) => setMessage(ev.target.value)}
-            disabled={disabled}
-            type="text"
-            variant="standard"
-            rows={5}
-            autoFocus={messageFocused}
-            fullWidth
-            multiline
-            slotProps={{
-              htmlInput: {
-                "aria-label": t("publish_dialog_message_label"),
-              },
-            }}
-            onPaste={handlePaste}
-          />
-          <FormControlLabel
-            label={t("publish_dialog_checkbox_markdown")}
-            sx={{ marginRight: 2 }}
-            control={
-              <Checkbox
-                size="small"
-                checked={markdownEnabled}
-                onChange={(ev) => setMarkdownEnabled(ev.target.checked)}
-                slotProps={{
-                  input: {
-                    "aria-label": t("publish_dialog_checkbox_markdown"),
-                  },
-                }}
-              />
-            }
-          />
-          <div style={{ display: "flex" }}>
-            <Suspense fallback={null}>
-              <EmojiPicker anchorEl={emojiPickerAnchorEl} onEmojiPick={handleEmojiPick} onClose={handleEmojiClose} />
-            </Suspense>
-            <DialogIconButton disabled={disabled} onClick={handleEmojiClick} aria-label={t("publish_dialog_emoji_picker_show")}>
-              <InsertEmoticonIcon />
-            </DialogIconButton>
-            <TextField
-              margin="dense"
-              label={t("publish_dialog_tags_label")}
-              placeholder={t("publish_dialog_tags_placeholder")}
-              value={tags}
-              onChange={(ev) => setTags(ev.target.value)}
-              disabled={disabled}
-              type="text"
-              variant="standard"
-              sx={{ flexGrow: 1, marginRight: 1 }}
-              slotProps={{
-                htmlInput: {
-                  "aria-label": t("publish_dialog_tags_label"),
-                },
-              }}
-            />
-            <FormControl variant="standard" margin="dense" sx={{ minWidth: 170, maxWidth: 300, flexGrow: 1 }}>
-              <InputLabel />
-              <Select
-                label={t("publish_dialog_priority_label")}
-                margin="dense"
-                value={priority}
-                onChange={(ev) => setPriority(ev.target.value)}
-                disabled={disabled}
-                inputProps={{
-                  "aria-label": t("publish_dialog_priority_label"),
+                closeLabel={t("publish_dialog_topic_reset")}
+                onClose={() => {
+                  setBaseUrl(props.baseUrl);
+                  setTopic(props.topic);
+                  setShowTopicUrl(false);
                 }}
               >
-                {[5, 4, 3, 2, 1].map((p) => (
-                  <MenuItem
-                    key={`priorityMenuItem${p}`}
-                    value={p}
-                    aria-label={t("notifications_priority_x", {
-                      priority: p,
-                    })}
-                  >
-                    <div style={{ display: "flex", alignItems: "center" }}>
-                      <img
-                        src={priorities[p].file}
-                        style={{ marginRight: "8px" }}
-                        alt={t("notifications_priority_x", {
-                          priority: p,
-                        })}
-                      />
-                      <div>{priorities[p].label}</div>
-                    </div>
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </div>
-          {showClickUrl && (
-            <ClosableRow
-              disabled={disabled}
-              closeLabel={t("publish_dialog_click_reset")}
-              onClose={() => {
-                setClickUrl("");
-                setShowClickUrl(false);
-              }}
-            >
-              <TextField
-                margin="dense"
-                label={t("publish_dialog_click_label")}
-                placeholder={t("publish_dialog_click_placeholder")}
-                value={clickUrl}
-                onChange={(ev) => setClickUrl(ev.target.value)}
+                <div className="grid flex-1 gap-3 sm:grid-cols-[3fr_2fr]">
+                  <Field label={t("publish_dialog_base_url_label")} htmlFor="publish-base-url">
+                    <Input
+                      id="publish-base-url"
+                      type="url"
+                      placeholder={t("publish_dialog_base_url_placeholder")}
+                      value={baseUrl}
+                      onChange={(ev) => updateBaseUrl(ev.target.value)}
+                      disabled={disabled}
+                    />
+                  </Field>
+                  <Field label={t("publish_dialog_topic_label")} htmlFor="publish-topic">
+                    <Input
+                      id="publish-topic"
+                      placeholder={t("publish_dialog_topic_placeholder")}
+                      value={topic}
+                      onChange={(ev) => setTopic(ev.target.value)}
+                      disabled={disabled}
+                      // eslint-disable-next-line jsx-a11y/no-autofocus
+                      autoFocus={!messageFocused}
+                    />
+                  </Field>
+                </div>
+              </ClosableRow>
+            )}
+
+            <Field label={t("publish_dialog_title_label")} htmlFor="publish-title">
+              <Input
+                id="publish-title"
+                placeholder={t("publish_dialog_title_placeholder")}
+                value={title}
+                onChange={(ev) => setTitle(ev.target.value)}
                 disabled={disabled}
-                type="url"
-                fullWidth
-                variant="standard"
-                slotProps={{
-                  htmlInput: {
-                    "aria-label": t("publish_dialog_click_label"),
-                  },
-                }}
               />
-            </ClosableRow>
-          )}
-          {showEmail && (
-            <ClosableRow
-              disabled={disabled}
-              closeLabel={t("publish_dialog_email_reset")}
-              onClose={() => {
-                setEmail("");
-                setShowEmail(false);
-              }}
-            >
-              <TextField
-                margin="dense"
-                label={t("publish_dialog_email_label")}
-                placeholder={t("publish_dialog_email_placeholder")}
-                value={email}
-                onChange={(ev) => setEmail(ev.target.value)}
-                disabled={disabled}
-                type="email"
-                variant="standard"
-                fullWidth
-                slotProps={{
-                  htmlInput: {
-                    "aria-label": t("publish_dialog_email_label"),
-                  },
-                }}
-              />
-            </ClosableRow>
-          )}
-          {showCall && (
-            <ClosableRow
-              disabled={disabled}
-              closeLabel={t("publish_dialog_call_reset")}
-              onClose={() => {
-                setCall("");
-                setShowCall(false);
-              }}
-            >
-              <FormControl fullWidth variant="standard" margin="dense">
-                <InputLabel />
-                <Select
-                  label={t("publish_dialog_call_label")}
-                  margin="dense"
-                  value={call}
-                  onChange={(ev) => setCall(ev.target.value)}
-                  disabled={disabled}
-                  inputProps={{
-                    "aria-label": t("publish_dialog_call_label"),
-                  }}
-                >
-                  {account?.phone_numbers?.map((phoneNumber) => (
-                    <MenuItem key={phoneNumber} value={phoneNumber} aria-label={phoneNumber}>
-                      {t("publish_dialog_call_item", { number: phoneNumber })}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </ClosableRow>
-          )}
-          {showAttachUrl && (
-            <ClosableRow
-              disabled={disabled}
-              closeLabel={t("publish_dialog_attach_reset")}
-              onClose={() => {
-                setAttachUrl("");
-                setFilename("");
-                setFilenameEdited(false);
-                setShowAttachUrl(false);
-              }}
-            >
-              <TextField
-                margin="dense"
-                label={t("publish_dialog_attach_label")}
-                placeholder={t("publish_dialog_attach_placeholder")}
-                value={attachUrl}
-                onChange={(ev) => {
-                  const url = ev.target.value;
-                  setAttachUrl(url);
-                  if (!filenameEdited) {
-                    try {
-                      const u = new URL(url);
-                      const parts = u.pathname.split("/");
-                      if (parts.length > 0) {
-                        setFilename(parts[parts.length - 1]);
-                      }
-                    } catch (e) {
-                      // Do nothing
-                    }
+            </Field>
+
+            <Field label={t("publish_dialog_message_label")} htmlFor="publish-message">
+              <Textarea
+                id="publish-message"
+                rows={5}
+                placeholder={t("publish_dialog_message_placeholder")}
+                value={message}
+                onChange={(ev) => setMessage(ev.target.value)}
+                onPaste={handlePaste}
+                onKeyDown={(ev) => {
+                  if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) {
+                    handleSubmit(ev);
                   }
                 }}
                 disabled={disabled}
-                type="url"
-                variant="standard"
-                sx={{ flexGrow: 5, marginRight: 1 }}
-                slotProps={{
-                  htmlInput: {
-                    "aria-label": t("publish_dialog_attach_label"),
-                  },
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus={messageFocused}
+                className="resize-y"
+              />
+              <Checkbox
+                label={t("publish_dialog_checkbox_markdown")}
+                checked={markdownEnabled}
+                onChange={setMarkdownEnabled}
+                disabled={disabled}
+                className="mt-1"
+              />
+            </Field>
+
+            <Field label={t("publish_dialog_tags_label")} htmlFor="publish-tags">
+              <div className="flex gap-2">
+                <Input
+                  id="publish-tags"
+                  placeholder={t("publish_dialog_tags_placeholder")}
+                  value={tags}
+                  onChange={(ev) => setTags(ev.target.value)}
+                  disabled={disabled}
+                />
+                <Popover.Root>
+                  <Popover.Trigger asChild>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={disabled}
+                      aria-label={t("publish_dialog_emoji_picker_show")}
+                      className="w-10 shrink-0 px-0"
+                    >
+                      <Smile className="size-4" />
+                    </Button>
+                  </Popover.Trigger>
+                  <Popover.Portal>
+                    <Popover.Content
+                      align="end"
+                      sideOffset={6}
+                      collisionPadding={12}
+                      className="z-50 flex max-h-80 w-[min(22rem,calc(100vw-24px))] flex-col overflow-hidden rounded-2xl border border-border bg-surface text-text shadow-xl"
+                    >
+                      <Suspense
+                        fallback={
+                          <div className="flex h-40 items-center justify-center">
+                            <Spinner />
+                          </div>
+                        }
+                      >
+                        <EmojiPicker onEmojiPick={handleEmojiPick} />
+                      </Suspense>
+                    </Popover.Content>
+                  </Popover.Portal>
+                </Popover.Root>
+              </div>
+            </Field>
+
+            <Field label={t("publish_dialog_priority_label")}>
+              <PriorityPicker value={priority} onChange={setPriority} disabled={disabled} />
+            </Field>
+
+            {showClickUrl && (
+              <ClosableRow
+                disabled={disabled}
+                closeLabel={t("publish_dialog_click_reset")}
+                onClose={() => {
+                  setClickUrl("");
+                  setShowClickUrl(false);
                 }}
-              />
-              <TextField
-                margin="dense"
-                label={t("publish_dialog_filename_label")}
-                placeholder={t("publish_dialog_filename_placeholder")}
-                value={filename}
-                onChange={(ev) => {
-                  setFilename(ev.target.value);
-                  setFilenameEdited(true);
-                }}
-                disabled={disabled}
-                type="text"
-                variant="standard"
-                sx={{ flexGrow: 1 }}
-                slotProps={{
-                  htmlInput: {
-                    "aria-label": t("publish_dialog_filename_label"),
-                  },
-                }}
-              />
-            </ClosableRow>
-          )}
-          <input type="file" ref={attachFileInput} onChange={handleAttachFileChanged} style={{ display: "none" }} aria-hidden />
-          {showAttachFile && (
-            <AttachmentBox
-              file={attachFile}
-              filename={filename}
-              disabled={disabled}
-              error={attachFileError}
-              onChangeFilename={(f) => setFilename(f)}
-              onClose={() => {
-                setAttachFile(null);
-                setAttachFileError("");
-                setFilename("");
-              }}
-            />
-          )}
-          {showDelay && (
-            <ClosableRow
-              disabled={disabled}
-              closeLabel={t("publish_dialog_delay_reset")}
-              onClose={() => {
-                setDelay("");
-                setShowDelay(false);
-              }}
-            >
-              <TextField
-                margin="dense"
-                label={t("publish_dialog_delay_label")}
-                placeholder={t("publish_dialog_delay_placeholder", {
-                  unixTimestamp: "1649029748",
-                  relativeTime: "30m",
-                  naturalLanguage: "tomorrow, 9am",
-                })}
-                value={delay}
-                onChange={(ev) => setDelay(ev.target.value)}
-                disabled={disabled}
-                type="text"
-                variant="standard"
-                fullWidth
-                slotProps={{
-                  htmlInput: {
-                    "aria-label": t("publish_dialog_delay_label"),
-                  },
-                }}
-              />
-            </ClosableRow>
-          )}
-          <Typography variant="body1" sx={{ marginTop: 2, marginBottom: 1 }}>
-            {t("publish_dialog_other_features")}
-          </Typography>
-          <div>
-            {!showClickUrl && (
-              <Chip
-                clickable
-                disabled={disabled}
-                label={t("publish_dialog_chip_click_label")}
-                aria-label={t("publish_dialog_chip_click_label")}
-                onClick={() => setShowClickUrl(true)}
-                sx={{ marginRight: 1, marginBottom: 1 }}
-              />
-            )}
-            {!showEmail && (
-              <Chip
-                clickable
-                disabled={disabled}
-                label={t("publish_dialog_chip_email_label")}
-                aria-label={t("publish_dialog_chip_email_label")}
-                onClick={() => setShowEmail(true)}
-                sx={{ marginRight: 1, marginBottom: 1 }}
-              />
-            )}
-            {account?.phone_numbers?.length > 0 && !showCall && (
-              <Chip
-                clickable
-                disabled={disabled}
-                label={t("publish_dialog_chip_call_label")}
-                aria-label={t("publish_dialog_chip_call_label")}
-                onClick={() => {
-                  setShowCall(true);
-                  setCall(account.phone_numbers[0]);
-                }}
-                sx={{ marginRight: 1, marginBottom: 1 }}
-              />
-            )}
-            {!showAttachUrl && !showAttachFile && (
-              <Chip
-                clickable
-                disabled={disabled}
-                label={t("publish_dialog_chip_attach_url_label")}
-                aria-label={t("publish_dialog_chip_attach_url_label")}
-                onClick={() => setShowAttachUrl(true)}
-                sx={{ marginRight: 1, marginBottom: 1 }}
-              />
-            )}
-            {!showAttachFile && !showAttachUrl && (
-              <Chip
-                clickable
-                disabled={disabled}
-                label={t("publish_dialog_chip_attach_file_label")}
-                aria-label={t("publish_dialog_chip_attach_file_label")}
-                onClick={() => handleAttachFileClick()}
-                sx={{ marginRight: 1, marginBottom: 1 }}
-              />
-            )}
-            {!showDelay && (
-              <Chip
-                clickable
-                disabled={disabled}
-                label={t("publish_dialog_chip_delay_label")}
-                aria-label={t("publish_dialog_chip_delay_label")}
-                onClick={() => setShowDelay(true)}
-                sx={{ marginRight: 1, marginBottom: 1 }}
-              />
-            )}
-            {!showTopicUrl && (
-              <Chip
-                clickable
-                disabled={disabled}
-                label={t("publish_dialog_chip_topic_label")}
-                aria-label={t("publish_dialog_chip_topic_label")}
-                onClick={() => setShowTopicUrl(true)}
-                sx={{ marginRight: 1, marginBottom: 1 }}
-              />
-            )}
-            {account && !account?.phone_numbers && (
-              <Tooltip title={t("publish_dialog_chip_call_no_verified_numbers_tooltip")}>
-                <span>
-                  <Chip
-                    clickable
-                    disabled
-                    label={t("publish_dialog_chip_call_label")}
-                    aria-label={t("publish_dialog_chip_call_label")}
-                    sx={{ marginRight: 1, marginBottom: 1 }}
+              >
+                <Field label={t("publish_dialog_click_label")} htmlFor="publish-click" className="flex-1">
+                  <Input
+                    id="publish-click"
+                    type="url"
+                    placeholder={t("publish_dialog_click_placeholder")}
+                    value={clickUrl}
+                    onChange={(ev) => setClickUrl(ev.target.value)}
+                    disabled={disabled}
                   />
+                </Field>
+              </ClosableRow>
+            )}
+
+            {showEmail && (
+              <ClosableRow
+                disabled={disabled}
+                closeLabel={t("publish_dialog_email_reset")}
+                onClose={() => {
+                  setEmail("");
+                  setShowEmail(false);
+                }}
+              >
+                <Field label={t("publish_dialog_email_label")} htmlFor="publish-email" className="flex-1">
+                  <Input
+                    id="publish-email"
+                    type="email"
+                    placeholder={t("publish_dialog_email_placeholder")}
+                    value={email}
+                    onChange={(ev) => setEmail(ev.target.value)}
+                    disabled={disabled}
+                  />
+                </Field>
+              </ClosableRow>
+            )}
+
+            {showAttachUrl && (
+              <ClosableRow
+                disabled={disabled}
+                closeLabel={t("publish_dialog_attach_reset")}
+                onClose={() => {
+                  setAttachUrl("");
+                  setFilename("");
+                  setFilenameEdited(false);
+                  setShowAttachUrl(false);
+                }}
+              >
+                <div className="grid flex-1 gap-3 sm:grid-cols-[3fr_2fr]">
+                  <Field label={t("publish_dialog_attach_label")} htmlFor="publish-attach">
+                    <Input
+                      id="publish-attach"
+                      type="url"
+                      placeholder={t("publish_dialog_attach_placeholder")}
+                      value={attachUrl}
+                      onChange={(ev) => handleAttachUrlChange(ev.target.value)}
+                      disabled={disabled}
+                    />
+                  </Field>
+                  <Field label={t("publish_dialog_filename_label")} htmlFor="publish-filename">
+                    <Input
+                      id="publish-filename"
+                      placeholder={t("publish_dialog_filename_placeholder")}
+                      value={filename}
+                      onChange={(ev) => {
+                        setFilename(ev.target.value);
+                        setFilenameEdited(true);
+                      }}
+                      disabled={disabled}
+                    />
+                  </Field>
+                </div>
+              </ClosableRow>
+            )}
+
+            <input
+              type="file"
+              ref={attachFileInput}
+              onChange={(ev) => updateAttachFile(ev.target.files[0])}
+              className="hidden"
+              aria-hidden
+              tabIndex={-1}
+            />
+            {showAttachFile && (
+              <AttachmentBox
+                file={attachFile}
+                filename={filename}
+                disabled={disabled}
+                error={attachFileError}
+                onChangeFilename={setFilename}
+                onClose={() => {
+                  setAttachFile(null);
+                  setAttachFileError("");
+                  setFilename("");
+                }}
+              />
+            )}
+
+            {showDelay && (
+              <ClosableRow
+                disabled={disabled}
+                closeLabel={t("publish_dialog_delay_reset")}
+                onClose={() => {
+                  setDelay("");
+                  setShowDelay(false);
+                }}
+              >
+                <Field label={t("publish_dialog_delay_label")} htmlFor="publish-delay" className="flex-1">
+                  <Input
+                    id="publish-delay"
+                    placeholder={t("publish_dialog_delay_placeholder", {
+                      unixTimestamp: "1649029748",
+                      relativeTime: "30m",
+                      naturalLanguage: "tomorrow, 9am",
+                    })}
+                    value={delay}
+                    onChange={(ev) => setDelay(ev.target.value)}
+                    disabled={disabled}
+                  />
+                </Field>
+              </ClosableRow>
+            )}
+
+            {extras.length > 0 && (
+              <div>
+                <p className="mb-2 text-sm font-medium">{t("publish_dialog_other_features")}</p>
+                <div className="flex flex-wrap gap-2">
+                  {extras.map(({ icon: Icon, label, onClick }) => (
+                    <button
+                      key={label}
+                      type="button"
+                      onClick={onClick}
+                      disabled={disabled}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-full border border-border-strong px-3 text-sm text-text transition-colors hover:border-accent hover:bg-accent-soft disabled:opacity-50"
+                    >
+                      <Plus className="size-3.5 text-muted" aria-hidden />
+                      <Icon className="size-3.5" aria-hidden />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-muted">
+              <Trans
+                i18nKey="publish_dialog_details_examples_description"
+                components={{
+                  docsLink: <DocsLink />,
+                }}
+              />
+            </p>
+          </form>
+
+          <div className="mt-6 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center">
+            <div className="min-w-0 flex-1 text-sm" aria-live="polite">
+              {status && (
+                <span
+                  className={cn(
+                    status.error && "text-danger",
+                    status.success && "text-success",
+                    !status.error && !status.success && "text-muted",
+                  )}
+                >
+                  {status.text}
                 </span>
-              </Tooltip>
+              )}
+            </div>
+            {activeRequest ? (
+              <Button type="button" variant="secondary" onClick={() => activeRequest.abort()}>
+                <Spinner className="size-4" />
+                {t("publish_dialog_button_cancel_sending")}
+              </Button>
+            ) : (
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Checkbox
+                  label={t("publish_dialog_checkbox_publish_another")}
+                  checked={publishAnother}
+                  onChange={setPublishAnother}
+                  className="mr-2"
+                />
+                <Button type="button" variant="ghost" onClick={props.onClose}>
+                  {t("publish_dialog_button_cancel")}
+                </Button>
+                <Button type="submit" form="publish-form" disabled={!sendButtonEnabled}>
+                  {t("publish_dialog_button_send")}
+                </Button>
+              </div>
             )}
           </div>
-          <Typography variant="body1" sx={{ marginTop: 1, marginBottom: 1 }}>
-            <Trans
-              i18nKey="publish_dialog_details_examples_description"
-              components={{
-                docsLink: <Link href="https://ntfy.sh/docs" target="_blank" rel="noopener" />,
-              }}
-            />
-          </Typography>
         </DialogContent>
-        <DialogFooter status={status}>
-          {activeRequest && <Button onClick={() => activeRequest.abort()}>{t("publish_dialog_button_cancel_sending")}</Button>}
-          {!activeRequest && (
-            <>
-              <FormControlLabel
-                label={t("publish_dialog_checkbox_publish_another")}
-                sx={{ marginRight: 2 }}
-                control={
-                  <Checkbox
-                    size="small"
-                    checked={publishAnother}
-                    onChange={(ev) => setPublishAnother(ev.target.checked)}
-                    slotProps={{
-                      input: {
-                        "aria-label": t("publish_dialog_checkbox_publish_another"),
-                      },
-                    }}
-                  />
-                }
-              />
-              <Button onClick={props.onClose}>{t("publish_dialog_button_cancel")}</Button>
-              <Button onClick={handleSubmit} disabled={!sendButtonEnabled}>
-                {t("publish_dialog_button_send")}
-              </Button>
-            </>
-          )}
-        </DialogFooter>
       </Dialog>
     </>
   );
 };
 
-const Row = (props) => (
-  <div style={{ display: "flex" }} role="row">
-    {props.children}
+const DocsLink = ({ children }) => (
+  <a href="https://docs.ntfy.sh/publish/" target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+    {children}
+  </a>
+);
+
+const PriorityPicker = ({ value, onChange, disabled }) => {
+  const { t } = useTranslation();
+  const priorities = [
+    { value: 1, label: t("priority_min"), title: t("publish_dialog_priority_min") },
+    { value: 2, label: t("priority_low"), title: t("publish_dialog_priority_low") },
+    { value: 3, label: t("priority_default"), title: t("publish_dialog_priority_default") },
+    { value: 4, label: t("priority_high"), title: t("publish_dialog_priority_high"), tone: "text-warning" },
+    { value: 5, label: t("priority_max"), title: t("publish_dialog_priority_max"), tone: "text-danger" },
+  ];
+  return (
+    <div role="radiogroup" aria-label={t("publish_dialog_priority_label")} className="grid grid-cols-5 gap-1 rounded-xl bg-surface-2 p-1">
+      {priorities.map((p) => {
+        const selected = p.value === value;
+        return (
+          <button
+            key={p.value}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            aria-label={t("notifications_priority_x", { priority: p.value })}
+            title={p.title}
+            disabled={disabled}
+            onClick={() => onChange(p.value)}
+            className={cn(
+              "h-8 truncate rounded-lg px-1 text-sm font-medium capitalize transition-colors",
+              selected ? cn("bg-surface shadow-sm", p.tone ?? "text-text") : "text-muted hover:text-text",
+            )}
+          >
+            {p.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+};
+
+const Checkbox = ({ label, checked, onChange, disabled, className }) => (
+  // eslint-disable-next-line jsx-a11y/label-has-associated-control
+  <label className={cn("inline-flex cursor-pointer select-none items-center gap-2 text-sm", disabled && "opacity-60", className)}>
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={(ev) => onChange(ev.target.checked)}
+      disabled={disabled}
+      className="size-4 rounded accent-accent"
+    />
+    {label}
+  </label>
+);
+
+const ClosableRow = ({ closable = true, disabled, closeLabel, onClose, children }) => (
+  <div className="flex items-end gap-2">
+    {children}
+    {closable && (
+      <IconButton label={closeLabel} onClick={onClose} disabled={disabled} className="mb-0.5 shrink-0">
+        <X className="size-4" />
+      </IconButton>
+    )}
   </div>
 );
 
-const ClosableRow = (props) => {
-  const closable = props.closable !== undefined ? props.closable : true;
-  return (
-    <Row>
-      {props.children}
-      {closable && (
-        <DialogIconButton disabled={props.disabled} onClick={props.onClose} sx={{ marginLeft: "6px" }} aria-label={props.closeLabel}>
-          <Close />
-        </DialogIconButton>
-      )}
-    </Row>
-  );
-};
-
-const DialogIconButton = (props) => {
-  const sx = props.sx || {};
-  return (
-    <IconButton
-      color="inherit"
-      size="large"
-      edge="start"
-      sx={{ height: "45px", marginTop: "17px", ...sx }}
-      onClick={props.onClick}
-      disabled={props.disabled}
-      aria-label={props["aria-label"]}
-    >
-      {props.children}
-    </IconButton>
-  );
-};
-
-const AttachmentBox = (props) => {
+const AttachmentBox = ({ file, filename, disabled, error, onChangeFilename, onClose }) => {
   const { t } = useTranslation();
-  const { file } = props;
-  return (
-    <>
-      <Typography variant="body1" sx={{ marginTop: 2 }}>
-        {t("publish_dialog_attached_file_title")}
-      </Typography>
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          padding: 0.5,
-          borderRadius: "4px",
-        }}
-      >
-        <AttachmentIcon type={file.type} href={imageRegex.test(file.name) ? URL.createObjectURL(file) : undefined} />
-        <Box sx={{ marginLeft: 1, textAlign: "left" }}>
-          <ExpandingTextField
-            minWidth={140}
-            variant="body2"
-            placeholder={t("publish_dialog_attached_file_filename_placeholder")}
-            value={props.filename}
-            onChange={(ev) => props.onChangeFilename(ev.target.value)}
-            disabled={props.disabled}
-          />
-          <br />
-          <Typography variant="body2" sx={{ color: "text.primary" }}>
-            {formatBytes(file.size)}
-            {props.error && (
-              <Typography component="span" sx={{ color: "error.main" }} aria-live="polite">
-                {" "}
-                ({props.error})
-              </Typography>
-            )}
-          </Typography>
-        </Box>
-        <DialogIconButton
-          disabled={props.disabled}
-          onClick={props.onClose}
-          sx={{ marginLeft: "6px" }}
-          aria-label={t("publish_dialog_attached_file_remove")}
-        >
-          <Close />
-        </DialogIconButton>
-      </Box>
-    </>
-  );
-};
+  const [previewUrl, setPreviewUrl] = useState(undefined);
 
-const ExpandingTextField = (props) => {
-  const theme = useTheme();
-  const invisibleFieldRef = useRef();
-  const [textWidth, setTextWidth] = useState(props.minWidth);
-  const determineTextWidth = () => {
-    const boundingRect = invisibleFieldRef?.current?.getBoundingClientRect();
-    if (!boundingRect) {
-      return props.minWidth;
-    }
-    return boundingRect.width >= props.minWidth ? Math.round(boundingRect.width) : props.minWidth;
-  };
   useEffect(() => {
-    setTextWidth(determineTextWidth() + 5);
-  }, [props.value]);
+    if (!imageRegex.test(file.name)) {
+      setPreviewUrl(undefined);
+      return undefined;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
   return (
-    <>
-      <Typography ref={invisibleFieldRef} component="span" variant={props.variant} aria-hidden sx={{ position: "absolute", left: "-200%" }}>
-        {props.value}
-      </Typography>
-      <TextField
-        margin="dense"
-        placeholder={props.placeholder}
-        value={props.value}
-        onChange={props.onChange}
-        type="text"
-        variant="standard"
-        sx={{ width: `${textWidth}px`, borderBottom: "none" }}
-        slotProps={{
-          input: {
-            style: { fontSize: theme.typography[props.variant].fontSize },
-          },
-          htmlInput: {
-            style: { paddingBottom: 0, paddingTop: 0 },
-            "aria-label": props.placeholder,
-          },
-        }}
-        disabled={props.disabled}
-      />
-    </>
+    <div>
+      <p className="mb-1.5 text-sm font-medium">{t("publish_dialog_attached_file_title")}</p>
+      <div
+        className={cn(
+          "flex items-center gap-3 rounded-xl border p-2",
+          error ? "border-danger/40 bg-danger/5" : "border-border bg-surface-2",
+        )}
+      >
+        <AttachmentIcon type={file.type} href={previewUrl} />
+        <div className="min-w-0 flex-1">
+          <input
+            aria-label={t("publish_dialog_attached_file_filename_placeholder")}
+            placeholder={t("publish_dialog_attached_file_filename_placeholder")}
+            value={filename}
+            onChange={(ev) => onChangeFilename(ev.target.value)}
+            disabled={disabled}
+            className="w-full truncate rounded bg-transparent text-sm font-medium focus:outline-none focus:ring-2 focus:ring-accent-soft"
+          />
+          <p className="text-xs text-muted">
+            {formatBytes(file.size)}
+            {error && (
+              <span className="text-danger" aria-live="polite">
+                {" "}
+                · {error}
+              </span>
+            )}
+          </p>
+        </div>
+        <IconButton label={t("publish_dialog_attached_file_remove")} onClick={onClose} disabled={disabled} className="shrink-0">
+          <X className="size-4" />
+        </IconButton>
+      </div>
+    </div>
   );
 };
 
-const DropArea = (props) => {
+/** Invisible full-screen drop target; Radix disables pointer events outside the dialog, so it opts back in. */
+const DropArea = ({ onDrop, onDragLeave }) => {
   const allowDrag = (ev) => {
-    // This is where we could disallow certain files to be dragged in.
-    // For now we allow all files.
-
     // eslint-disable-next-line no-param-reassign
     ev.dataTransfer.dropEffect = "copy";
     ev.preventDefault();
   };
-
-  return (
-    <Box
-      sx={{
-        position: "absolute",
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 10002,
-      }}
-      onDrop={props.onDrop}
+  return createPortal(
+    <div
+      className="pointer-events-auto fixed inset-0 z-[60]"
+      onDrop={onDrop}
       onDragEnter={allowDrag}
       onDragOver={allowDrag}
-      onDragLeave={props.onDragLeave}
-    />
+      onDragLeave={onDragLeave}
+    />,
+    document.body,
   );
 };
 
 const DropBox = () => {
   const { t } = useTranslation();
   return (
-    <Box
-      sx={{
-        position: "absolute",
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 10000,
-        backgroundColor: "#ffffffbb",
-      }}
-    >
-      <Box
-        sx={{
-          position: "absolute",
-          border: "3px dashed #ccc",
-          borderRadius: "5px",
-          left: "40px",
-          top: "40px",
-          right: "40px",
-          bottom: "40px",
-          zIndex: 10001,
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-        }}
-      >
-        <Typography variant="h5">{t("publish_dialog_drop_file_here")}</Typography>
-      </Box>
-    </Box>
+    <div className="absolute -inset-2 z-10 flex items-center justify-center rounded-2xl border-2 border-dashed border-accent bg-surface/90 backdrop-blur-sm">
+      <div className="flex flex-col items-center gap-2 text-accent">
+        <Upload className="size-8" aria-hidden />
+        <p className="text-lg font-semibold">{t("publish_dialog_drop_file_here")}</p>
+      </div>
+    </div>
   );
 };
 
