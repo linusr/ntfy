@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useOutletContext } from "react-router-dom";
 import { BellPlus, Globe, Lock, Pencil, Play, Trash2 } from "lucide-react";
 import userManager from "../app/UserManager";
+import cn from "./ui/cn";
 import { formatDate, formatTime, playSound, shuffle, sounds } from "../app/utils";
 import session from "../app/Session";
 import routes from "./routes";
@@ -78,8 +79,16 @@ const Sound = () => {
       : t("prefs_notifications_sound_description_some", { sound: sounds[sound]?.label });
   return (
     <Row title={t("prefs_notifications_sound_title")} description={description}>
-      <div className="flex items-center gap-1">
-        <NativeSelect value={sound} onChange={handleChange} aria-label={t("prefs_notifications_sound_title")} className={selectClass}>
+      <div className="flex w-full items-center gap-1 sm:w-auto">
+        <IconButton label={t("prefs_notifications_sound_play")} onClick={() => playSound(sound)} disabled={sound === "none"}>
+          <Play className="size-4" />
+        </IconButton>
+        <NativeSelect
+          value={sound}
+          onChange={handleChange}
+          aria-label={t("prefs_notifications_sound_title")}
+          className={cn(selectClass, "flex-1 sm:flex-none")}
+        >
           <option value="none">{t("prefs_notifications_sound_no_sound")}</option>
           {Object.entries(sounds).map(([key, s]) => (
             <option key={key} value={key}>
@@ -87,9 +96,6 @@ const Sound = () => {
             </option>
           ))}
         </NativeSelect>
-        <IconButton label={t("prefs_notifications_sound_play")} onClick={() => playSound(sound)} disabled={sound === "none"}>
-          <Play className="size-4" />
-        </IconButton>
       </div>
     </Row>
   );
