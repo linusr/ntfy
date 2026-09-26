@@ -1,9 +1,13 @@
 import * as React from "react";
 import { Suspense, useContext, useEffect, useState, useMemo } from "react";
-import { Box, Toolbar, CssBaseline, Backdrop, CircularProgress, useMediaQuery, ThemeProvider, createTheme } from "@mui/material";
+import { CssBaseline, useMediaQuery, ThemeProvider, createTheme } from "@mui/material";
+import { Loader2 } from "lucide-react";
+import "../styles.css";
 import { useLiveQuery } from "dexie-react-hooks";
 import { BrowserRouter, Outlet, Route, Routes, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { ToastProvider } from "./ui/Toast";
+import { TooltipProvider } from "./ui/Tooltip";
 import { AllSubscriptions, SingleSubscription } from "./Notifications";
 import { darkTheme, lightTheme } from "./theme";
 import Navigation from "./Navigation";
@@ -76,24 +80,28 @@ const App = () => {
           <ThemeProvider theme={theme}>
             <AccountContext.Provider value={accountMemo}>
               <CssBaseline />
-              <ErrorBoundary>
-                <Routes>
-                  <Route element={<AuthLayout />}>
-                    <Route path={routes.login} element={<Login />} />
-                    <Route path={routes.signup} element={<Signup />} />
-                    <Route path={routes.passwordResetRequest} element={<PasswordResetRequest />} />
-                    <Route path={routes.passwordReset} element={<PasswordReset />} />
-                    <Route path={routes.emailVerify} element={<EmailVerify />} />
-                  </Route>
-                  <Route element={<Layout />}>
-                    <Route path={routes.app} element={<AllSubscriptions />} />
-                    <Route path={routes.account} element={<Account />} />
-                    <Route path={routes.settings} element={<Preferences />} />
-                    <Route path={routes.subscription} element={<SingleSubscription />} />
-                    <Route path={routes.subscriptionExternal} element={<SingleSubscription />} />
-                  </Route>
-                </Routes>
-              </ErrorBoundary>
+              <TooltipProvider>
+                <ToastProvider>
+                  <ErrorBoundary>
+                    <Routes>
+                      <Route element={<AuthLayout />}>
+                        <Route path={routes.login} element={<Login />} />
+                        <Route path={routes.signup} element={<Signup />} />
+                        <Route path={routes.passwordResetRequest} element={<PasswordResetRequest />} />
+                        <Route path={routes.passwordReset} element={<PasswordReset />} />
+                        <Route path={routes.emailVerify} element={<EmailVerify />} />
+                      </Route>
+                      <Route element={<Layout />}>
+                        <Route path={routes.app} element={<AllSubscriptions />} />
+                        <Route path={routes.account} element={<Account />} />
+                        <Route path={routes.settings} element={<Preferences />} />
+                        <Route path={routes.subscription} element={<SingleSubscription />} />
+                        <Route path={routes.subscriptionExternal} element={<SingleSubscription />} />
+                      </Route>
+                    </Routes>
+                  </ErrorBoundary>
+                </ToastProvider>
+              </TooltipProvider>
             </AccountContext.Provider>
           </ThemeProvider>
         </BrowserRouter>
@@ -147,7 +155,7 @@ const Layout = () => {
 
   return (
     <PrefCacheProvider>
-      <Box sx={{ display: "flex" }}>
+      <div className="flex">
         <ActionBar selected={selected} onMobileDrawerToggle={() => setMobileDrawerOpen(!mobileDrawerOpen)} />
         <Navigation
           subscriptions={subscriptionsWithoutInternal}
@@ -157,7 +165,6 @@ const Layout = () => {
           onPublishMessageClick={() => setSendDialogOpenMode(PublishDialog.OPEN_MODE_DEFAULT)}
         />
         <Main>
-          <Toolbar />
           <Outlet
             context={{
               subscriptions: subscriptionsWithoutInternal,
@@ -167,40 +174,22 @@ const Layout = () => {
           />
         </Main>
         <Messaging selected={selected} dialogOpenMode={sendDialogOpenMode} onDialogOpenModeChange={setSendDialogOpenMode} />
-      </Box>
+      </div>
     </PrefCacheProvider>
   );
 };
 
+/** Scroll container for the page content; the infinite-scrolling notification list targets its id. */
 const Main = (props) => (
-  <Box
-    id="main"
-    component="main"
-    sx={{
-      display: "flex",
-      flexGrow: 1,
-      flexDirection: "column",
-      padding: { xs: 0, md: 3 },
-      width: { sm: `calc(100% - ${Navigation.width}px)` },
-      height: "100dvh",
-      overflow: "auto",
-      backgroundColor: "background.default",
-    }}
-  >
+  <main id="main" className="flex h-dvh min-w-0 flex-1 flex-col overflow-y-auto bg-bg pt-16 sm:ml-[272px]">
     {props.children}
-  </Box>
+  </main>
 );
 
 const Loader = () => (
-  <Backdrop
-    open
-    sx={{
-      zIndex: 100000,
-      backgroundColor: "background.default",
-    }}
-  >
-    <CircularProgress color="success" disableShrink />
-  </Backdrop>
+  <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-bg">
+    <Loader2 className="size-8 animate-spin text-accent" />
+  </div>
 );
 
 export default App;

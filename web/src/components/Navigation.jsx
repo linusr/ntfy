@@ -1,37 +1,9 @@
-import {
-  Alert,
-  AlertTitle,
-  Box,
-  Button,
-  CircularProgress,
-  Divider,
-  Drawer,
-  IconButton,
-  Link,
-  List,
-  ListItemButton,
-  ListItemIcon,
-  ListItemText,
-  ListSubheader,
-  Portal,
-  Toolbar,
-  Tooltip,
-  Typography,
-  useTheme,
-} from "@mui/material";
 import * as React from "react";
 import { useContext, useState } from "react";
-import Person from "@mui/icons-material/Person";
-import SettingsIcon from "@mui/icons-material/Settings";
-import AddIcon from "@mui/icons-material/Add";
 import { useLocation, useNavigate } from "react-router-dom";
-import ChatBubble from "@mui/icons-material/ChatBubble";
-import MoreVert from "@mui/icons-material/MoreVert";
-import NotificationsOffOutlined from "@mui/icons-material/NotificationsOffOutlined";
-import Send from "@mui/icons-material/Send";
-import ArticleIcon from "@mui/icons-material/Article";
 import { Trans, useTranslation } from "react-i18next";
-import CelebrationIcon from "@mui/icons-material/Celebration";
+import * as RadixDialog from "@radix-ui/react-dialog";
+import { BellOff, BookOpen, Inbox, Loader2, Lock, LogOut, MoreHorizontal, Plus, Send, Settings, UserRound } from "lucide-react";
 import SubscribeDialog from "./SubscribeDialog";
 import { openUrl, topicDisplayName, topicUrl } from "../app/utils";
 import routes from "./routes";
@@ -40,53 +12,44 @@ import subscriptionManager from "../app/SubscriptionManager";
 import notifier from "../app/Notifier";
 import config from "../app/config";
 import session from "../app/Session";
-import accountApi, { Permission, Role } from "../app/AccountApi";
-import UpgradeDialog from "./UpgradeDialog";
+import accountApi, { Permission } from "../app/AccountApi";
+import db from "../app/db";
 import AccountContext from "./AccountContext";
-import { PermissionDenyAll, PermissionRead, PermissionReadWrite, PermissionWrite } from "./ReserveIcons";
 import { SubscriptionPopup } from "./SubscriptionPopup";
 import { useNotificationPermissionListener, useVersionChangeListener } from "./hooks";
-import TopicAvatar from "./TopicAvatar";
+import { fadeNavigate } from "../app/transition";
+import logo from "../img/alai.svg";
+import TopicAvatar from "./ui/TopicAvatar";
+import Button from "./ui/Button";
+import { Alert } from "./ui/Primitives";
+import cn from "./ui/cn";
 
-const navWidth = 280;
+const navWidth = 272;
 
-const Navigation = (props) => {
-  const navigationList = <NavList {...props} />;
-  return (
-    <Box component="nav" role="navigation" sx={{ width: { sm: Navigation.width }, flexShrink: { sm: 0 } }}>
-      {/* Mobile drawer; only shown if menu icon clicked (mobile open) and display is small */}
-      <Drawer
-        variant="temporary"
-        role="menubar"
-        open={props.mobileDrawerOpen}
-        onClose={props.onMobileDrawerToggle}
-        ModalProps={{ keepMounted: true }} // Better open performance on mobile.
-        sx={{
-          display: { xs: "block", sm: "none" },
-          "& .MuiDrawer-paper": { boxSizing: "border-box", width: navWidth, backgroundImage: "none" },
-        }}
-      >
-        {navigationList}
-      </Drawer>
-      {/* Big screen drawer; persistent, shown if screen is big */}
-      <Drawer
-        open
-        variant="permanent"
-        role="menubar"
-        sx={{
-          display: { xs: "none", sm: "block" },
-          "& .MuiDrawer-paper": { boxSizing: "border-box", width: navWidth },
-        }}
-      >
-        {navigationList}
-      </Drawer>
-    </Box>
-  );
-};
+/** Persistent sidebar on wide screens; a slide-in sheet on phones. */
+const Navigation = (props) => (
+  <>
+    <aside
+      className="fixed inset-y-0 left-0 z-30 hidden w-[272px] flex-col border-r border-border bg-surface sm:flex"
+      aria-label="Navigation"
+    >
+      <NavContent {...props} />
+    </aside>
+    <RadixDialog.Root open={props.mobileDrawerOpen} onOpenChange={props.onMobileDrawerToggle}>
+      <RadixDialog.Portal>
+        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-black/40 sm:hidden" />
+        <RadixDialog.Content className="fixed inset-y-0 left-0 z-50 flex w-[86vw] max-w-[300px] flex-col bg-surface shadow-2xl sm:hidden">
+          <RadixDialog.Title className="sr-only">Navigation</RadixDialog.Title>
+          <RadixDialog.Description className="sr-only">Topics and settings</RadixDialog.Description>
+          <NavContent {...props} onNavigate={props.onMobileDrawerToggle} />
+        </RadixDialog.Content>
+      </RadixDialog.Portal>
+    </RadixDialog.Root>
+  </>
+);
 Navigation.width = navWidth;
 
-const NavList = (props) => {
-  const theme = useTheme();
+const NavContent = (props) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
@@ -94,12 +57,12 @@ const NavList = (props) => {
   const [subscribeDialogKey, setSubscribeDialogKey] = useState(0);
   const [subscribeDialogOpen, setSubscribeDialogOpen] = useState(false);
   const [versionChanged, setVersionChanged] = useState(false);
+  useVersionChangeListener(() => setVersionChanged(true));
 
-  const handleVersionChange = () => {
-    setVersionChanged(true);
+  const go = (path) => {
+    navigate(path);
+    props.onNavigate?.();
   };
-
-  useVersionChangeListener(handleVersionChange);
 
   const handleSubscribeReset = () => {
     setSubscribeDialogOpen(false);
@@ -107,105 +70,140 @@ const NavList = (props) => {
   };
 
   const handleSubscribeSubmit = (subscription) => {
-    console.log(`[Navigation] New subscription: ${subscription.id}`, subscription);
     handleSubscribeReset();
-    navigate(routes.forSubscription(subscription));
+    go(routes.forSubscription(subscription));
   };
 
-  const handleAccountClick = () => {
-    accountApi.sync(); // Dangle!
-    navigate(routes.account);
-  };
-
-  const isAdmin = account?.role === Role.ADMIN;
-  const isPaid = account?.billing?.subscription;
-  const hasTier = !!account?.tier;
-  const showUpgradeBanner = config.enable_payments && !isAdmin && !isPaid && !hasTier;
-  const showSubscriptionsList = props.subscriptions?.length > 0;
-  const showNotificationPermissionRequired = useNotificationPermissionListener(() => notifier.notRequested());
-  const showNotificationPermissionDenied = useNotificationPermissionListener(() => notifier.denied());
-  const showNotificationIOSInstallRequired = notifier.iosSupportedButInstallRequired();
-  const showNotificationBrowserNotSupportedBox = !showNotificationIOSInstallRequired && !notifier.browserSupported();
-  const showNotificationContextNotSupportedBox = notifier.browserSupported() && !notifier.contextSupported(); // Only show if notifications are generally supported in the browser
-
-  const alertVisible =
-    versionChanged ||
-    showNotificationPermissionRequired ||
-    showNotificationPermissionDenied ||
-    showNotificationIOSInstallRequired ||
-    showNotificationBrowserNotSupportedBox ||
-    showNotificationContextNotSupportedBox;
+  const showPermissionRequired = useNotificationPermissionListener(() => notifier.notRequested());
+  const showPermissionDenied = useNotificationPermissionListener(() => notifier.denied());
+  const showIOSInstallRequired = notifier.iosSupportedButInstallRequired();
+  const showBrowserNotSupported = !showIOSInstallRequired && !notifier.browserSupported();
+  const showContextNotSupported = notifier.browserSupported() && !notifier.contextSupported();
+  const subscriptions = (props.subscriptions || [])
+    .filter((s) => !s.internal)
+    .sort((a, b) => (topicUrl(a.baseUrl, a.topic) < topicUrl(b.baseUrl, b.topic) ? -1 : 1));
 
   return (
     <>
-      <Toolbar sx={{ display: { xs: "none", sm: "block" } }} />
-      <List component="nav" sx={{ paddingTop: { xs: 0, sm: alertVisible ? 0 : "" } }}>
-        {versionChanged && <VersionUpdateBanner />}
-        {showNotificationPermissionRequired && <NotificationPermissionRequired />}
-        {showNotificationPermissionDenied && <NotificationPermissionDeniedAlert />}
-        {showNotificationBrowserNotSupportedBox && <NotificationBrowserNotSupportedAlert />}
-        {showNotificationContextNotSupportedBox && <NotificationContextNotSupportedAlert />}
-        {showNotificationIOSInstallRequired && <NotificationIOSInstallRequiredAlert />}
-        {alertVisible && <Divider />}
-        {!showSubscriptionsList && (
-          <ListItemButton onClick={() => navigate(routes.app)} selected={location.pathname === config.app_root}>
-            <ListItemIcon>
-              <ChatBubble />
-            </ListItemIcon>
-            <ListItemText primary={t("nav_button_all_notifications")} />
-          </ListItemButton>
-        )}
-        {showSubscriptionsList && (
+      <div className="flex h-16 shrink-0 items-center gap-2.5 px-5">
+        <img src={logo} alt={t("action_bar_logo_alt")} className="size-8 rounded-lg" />
+        <span className="text-lg font-semibold tracking-tight">Alai</span>
+      </div>
+
+      <div className="flex gap-2 px-4 pb-3">
+        <Button className="flex-1" onClick={() => props.onPublishMessageClick()}>
+          <Send className="size-4" />
+          {t("nav_button_publish_message")}
+        </Button>
+        <Button variant="secondary" className="px-3" onClick={() => setSubscribeDialogOpen(true)} aria-label={t("nav_button_subscribe")}>
+          <Plus className="size-4" />
+        </Button>
+      </div>
+
+      <nav className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        <div className="space-y-2 px-1 pb-3 empty:hidden">
+          {versionChanged && (
+            <Alert
+              severity="info"
+              title={t("version_update_available_title")}
+              action={
+                <Button size="sm" variant="secondary" onClick={() => window.location.reload()}>
+                  {t("common_refresh")}
+                </Button>
+              }
+            >
+              {t("version_update_available_description")}
+            </Alert>
+          )}
+          {showPermissionRequired && (
+            <Alert
+              severity="warning"
+              title={t("alert_notification_permission_required_title")}
+              action={
+                <Button size="sm" variant="secondary" onClick={() => notifier.maybeRequestPermission()}>
+                  {t("alert_notification_permission_required_button")}
+                </Button>
+              }
+            >
+              {t("alert_notification_permission_required_description")}
+            </Alert>
+          )}
+          {showPermissionDenied && (
+            <Alert severity="warning" title={t("alert_notification_permission_denied_title")}>
+              {t("alert_notification_permission_denied_description")}
+            </Alert>
+          )}
+          {showIOSInstallRequired && (
+            <Alert severity="warning" title={t("alert_notification_ios_install_required_title")}>
+              {t("alert_notification_ios_install_required_description")}
+            </Alert>
+          )}
+          {showBrowserNotSupported && (
+            <Alert severity="warning" title={t("alert_not_supported_title")}>
+              {t("alert_not_supported_description")}
+            </Alert>
+          )}
+          {showContextNotSupported && (
+            <Alert severity="warning" title={t("alert_not_supported_title")}>
+              <Trans
+                i18nKey="alert_not_supported_context_description"
+                components={{
+                  mdnLink: (
+                    // eslint-disable-next-line jsx-a11y/anchor-has-content, jsx-a11y/control-has-associated-label
+                    <a
+                      className="underline"
+                      href="https://developer.mozilla.org/en-US/docs/Web/API/notification"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  ),
+                }}
+              />
+            </Alert>
+          )}
+        </div>
+
+        <NavItem icon={Inbox} selected={location.pathname === config.app_root} onClick={() => go(routes.app)}>
+          {t("nav_button_all_notifications")}
+        </NavItem>
+
+        {subscriptions.length > 0 && (
           <>
-            <ListSubheader>{t("nav_topics_title")}</ListSubheader>
-            <ListItemButton onClick={() => navigate(routes.app)} selected={location.pathname === config.app_root}>
-              <ListItemIcon>
-                <ChatBubble />
-              </ListItemIcon>
-              <ListItemText primary={t("nav_button_all_notifications")} />
-            </ListItemButton>
-            <SubscriptionList subscriptions={props.subscriptions} selectedSubscription={props.selectedSubscription} />
-            <Divider sx={{ my: 1 }} />
+            <p className="px-3 pb-1 pt-4 text-xs font-medium text-muted">{t("nav_topics_title")}</p>
+            {subscriptions.map((subscription) => (
+              <SubscriptionItem
+                key={subscription.id}
+                subscription={subscription}
+                selected={props.selectedSubscription?.id === subscription.id}
+                onNavigate={props.onNavigate}
+              />
+            ))}
           </>
         )}
+
+        <div className="my-3 h-px bg-border" />
+        <NavItem icon={Settings} selected={location.pathname === routes.settings} onClick={() => go(routes.settings)}>
+          {t("nav_button_settings")}
+        </NavItem>
         {session.exists() && (
-          <ListItemButton onClick={handleAccountClick} selected={location.pathname === routes.account}>
-            <ListItemIcon>
-              <Person />
-            </ListItemIcon>
-            <ListItemText primary={t("nav_button_account")} />
-          </ListItemButton>
+          <NavItem
+            icon={UserRound}
+            selected={location.pathname === routes.account}
+            onClick={() => {
+              accountApi.sync(); // Dangle!
+              go(routes.account);
+            }}
+          >
+            {t("nav_button_account")}
+          </NavItem>
         )}
-        <ListItemButton onClick={() => navigate(routes.settings)} selected={location.pathname === routes.settings}>
-          <ListItemIcon>
-            <SettingsIcon />
-          </ListItemIcon>
-          <ListItemText primary={t("nav_button_settings")} />
-        </ListItemButton>
-        <ListItemButton onClick={() => openUrl("/docs")}>
-          <ListItemIcon>
-            <ArticleIcon />
-          </ListItemIcon>
-          <ListItemText primary={t("nav_button_documentation")} />
-        </ListItemButton>
-        <ListItemButton onClick={() => props.onPublishMessageClick()}>
-          <ListItemIcon>
-            <Send />
-          </ListItemIcon>
-          <ListItemText primary={t("nav_button_publish_message")} />
-        </ListItemButton>
-        <ListItemButton onClick={() => setSubscribeDialogOpen(true)}>
-          <ListItemIcon>
-            <AddIcon />
-          </ListItemIcon>
-          <ListItemText primary={t("nav_button_subscribe")} />
-        </ListItemButton>
-        {showUpgradeBanner && (
-          // The text background gradient didn't seem to do well with switching between light/dark mode,
-          // So adding a `key` forces React to replace the entire component when the theme changes
-          <UpgradeBanner key={`upgrade-banner-${theme.palette.mode}`} mode={theme.palette.mode} />
-        )}
-      </List>
+        <NavItem icon={BookOpen} onClick={() => openUrl("/docs")}>
+          {t("nav_button_documentation")}
+        </NavItem>
+      </nav>
+
+      <ProfileFooter account={account} />
+
       <SubscribeDialog
         key={`subscribeDialog${subscribeDialogKey}`} // Resets dialog when canceled/closed
         open={subscribeDialogOpen}
@@ -217,252 +215,125 @@ const NavList = (props) => {
   );
 };
 
-const UpgradeBanner = ({ mode }) => {
-  const { t } = useTranslation();
-  const [dialogKey, setDialogKey] = useState(0);
-  const [dialogOpen, setDialogOpen] = useState(false);
+const NavItem = ({ icon: Icon, selected, onClick, children }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-current={selected ? "page" : undefined}
+    className={cn(
+      "flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm font-medium transition-colors",
+      selected ? "bg-accent-soft text-accent" : "text-text hover:bg-surface-2",
+    )}
+  >
+    <Icon className="size-[18px] shrink-0" />
+    <span className="truncate">{children}</span>
+  </button>
+);
 
-  const handleClick = () => {
-    setDialogKey((k) => k + 1);
-    setDialogOpen(true);
-  };
-
-  return (
-    <Box
-      sx={{
-        position: "fixed",
-        width: `${Navigation.width - 1}px`,
-        bottom: 0,
-        mt: "auto",
-        background:
-          mode === "light"
-            ? "linear-gradient(150deg, rgba(196, 228, 221, 0.46) 0%, rgb(255, 255, 255) 100%)"
-            : "linear-gradient(150deg, #203631 0%, #2a6e60 100%)",
-      }}
-    >
-      <Divider />
-      <ListItemButton onClick={handleClick} sx={{ pt: 2, pb: 2 }}>
-        <ListItemIcon>
-          <CelebrationIcon sx={{ color: mode === "light" ? "#55b86e" : "#00ff95" }} fontSize="large" />
-        </ListItemIcon>
-        <ListItemText
-          sx={{ ml: 1 }}
-          primary={t("nav_upgrade_banner_label")}
-          secondary={t("nav_upgrade_banner_description")}
-          primaryTypographyProps={{
-            style: {
-              fontWeight: 500,
-              fontSize: "1.1rem",
-              background:
-                mode === "light"
-                  ? "-webkit-linear-gradient(45deg, #09009f, #00ff95 80%)"
-                  : "-webkit-linear-gradient(45deg,rgb(255, 255, 255), #00ff95 80%)",
-              WebkitBackgroundClip: "text",
-              WebkitTextFillColor: "transparent",
-            },
-          }}
-          secondaryTypographyProps={{
-            style: {
-              fontSize: "1rem",
-            },
-          }}
-        />
-      </ListItemButton>
-      <UpgradeDialog key={`upgradeDialog${dialogKey}`} open={dialogOpen} onCancel={() => setDialogOpen(false)} />
-    </Box>
-  );
-};
-
-const SubscriptionList = (props) => {
-  const sortedSubscriptions = props.subscriptions
-    .filter((s) => !s.internal)
-    .sort((a, b) => (topicUrl(a.baseUrl, a.topic) < topicUrl(b.baseUrl, b.topic) ? -1 : 1));
-  return (
-    <>
-      {sortedSubscriptions.map((subscription) => (
-        <SubscriptionItem
-          key={subscription.id}
-          subscription={subscription}
-          selected={props.selectedSubscription && props.selectedSubscription.id === subscription.id}
-        />
-      ))}
-    </>
-  );
-};
-
-const SubscriptionItem = (props) => {
+const SubscriptionItem = ({ subscription, selected, onNavigate }) => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [menuAnchorEl, setMenuAnchorEl] = useState(null);
-
-  const { subscription } = props;
-  const iconBadge = subscription.new <= 99 ? subscription.new : "99+";
   const displayName = topicDisplayName(subscription);
-  const ariaLabel = subscription.state === ConnectionState.Connecting ? `${displayName} (${t("nav_button_connecting")})` : displayName;
-  const icon = subscription.state === ConnectionState.Connecting ? <CircularProgress size="22px" /> : <TopicAvatar name={displayName} />;
+  const connecting = subscription.state === ConnectionState.Connecting;
+  const unread = subscription.new <= 99 ? subscription.new : "99+";
+  const reserved = subscription.reservation?.everyone;
 
   const handleClick = async () => {
     navigate(routes.forSubscription(subscription));
+    onNavigate?.();
     await subscriptionManager.markNotificationsRead(subscription.id);
   };
 
   return (
-    <>
-      <ListItemButton onClick={handleClick} selected={props.selected} aria-label={ariaLabel} aria-live="polite">
-        <ListItemIcon>{icon}</ListItemIcon>
-        <ListItemText
-          primary={displayName}
-          primaryTypographyProps={{
-            style: { overflow: "hidden", textOverflow: "ellipsis" },
-          }}
-        />
-        {subscription.reservation?.everyone && (
-          <ListItemIcon edge="end" sx={{ minWidth: "26px" }}>
-            {subscription.reservation?.everyone === Permission.READ_WRITE && (
-              <Tooltip title={t("prefs_reservations_table_everyone_read_write")}>
-                <PermissionReadWrite size="small" />
-              </Tooltip>
-            )}
-            {subscription.reservation?.everyone === Permission.READ_ONLY && (
-              <Tooltip title={t("prefs_reservations_table_everyone_read_only")}>
-                <PermissionRead size="small" />
-              </Tooltip>
-            )}
-            {subscription.reservation?.everyone === Permission.WRITE_ONLY && (
-              <Tooltip title={t("prefs_reservations_table_everyone_write_only")}>
-                <PermissionWrite size="small" />
-              </Tooltip>
-            )}
-            {subscription.reservation?.everyone === Permission.DENY_ALL && (
-              <Tooltip title={t("prefs_reservations_table_everyone_deny_all")}>
-                <PermissionDenyAll size="small" />
-              </Tooltip>
-            )}
-          </ListItemIcon>
+    <div
+      className={cn("group flex items-center gap-1 rounded-xl pr-1 transition-colors", selected ? "bg-accent-soft" : "hover:bg-surface-2")}
+    >
+      <button
+        type="button"
+        onClick={handleClick}
+        aria-current={selected ? "page" : undefined}
+        aria-label={connecting ? `${displayName} (${t("nav_button_connecting")})` : displayName}
+        className="flex min-w-0 flex-1 items-center gap-3 py-1.5 pl-2 text-left"
+      >
+        {connecting ? (
+          <span className="flex size-7 items-center justify-center">
+            <Loader2 className="size-4 animate-spin text-muted" />
+          </span>
+        ) : (
+          <TopicAvatar name={displayName} />
         )}
+        <span className={cn("min-w-0 flex-1 truncate text-sm font-medium", selected ? "text-accent" : "text-text")}>{displayName}</span>
+        {reserved && reserved !== Permission.READ_WRITE && (
+          <Lock className="size-3.5 shrink-0 text-muted" aria-label={t("prefs_reservations_table_everyone_deny_all")} />
+        )}
+        {subscription.mutedUntil > 0 && <BellOff className="size-3.5 shrink-0 text-muted" aria-label={t("nav_button_muted")} />}
         {subscription.new > 0 && (
-          <Box
-            component="span"
-            sx={{
-              minWidth: 22,
-              height: 20,
-              px: 0.75,
-              mr: 0.5,
-              borderRadius: "10px",
-              fontSize: 12,
-              fontWeight: 700,
-              lineHeight: "20px",
-              textAlign: "center",
-              color: "primary.contrastText",
-              bgcolor: "primary.main",
-            }}
-          >
-            {iconBadge}
-          </Box>
+          <span className="min-w-5 rounded-full bg-accent px-1.5 text-center text-xs font-bold leading-5 text-accent-fg">{unread}</span>
         )}
-        {subscription.mutedUntil > 0 && (
-          <ListItemIcon edge="end" sx={{ minWidth: "26px" }} aria-label={t("nav_button_muted")}>
-            <Tooltip title={t("nav_button_muted")}>
-              <NotificationsOffOutlined />
-            </Tooltip>
-          </ListItemIcon>
+      </button>
+      <button
+        type="button"
+        aria-label={t("action_bar_toggle_action_menu")}
+        onClick={(e) => setMenuAnchorEl(e.currentTarget)}
+        className="flex size-7 shrink-0 items-center justify-center rounded-lg text-muted opacity-0 transition-opacity hover:bg-surface hover:text-text focus-visible:opacity-100 group-hover:opacity-100 max-sm:opacity-100"
+      >
+        <MoreHorizontal className="size-4" />
+      </button>
+      <SubscriptionPopup subscription={subscription} anchor={menuAnchorEl} onClose={() => setMenuAnchorEl(null)} />
+    </div>
+  );
+};
+
+const ProfileFooter = () => {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+
+  const handleLogout = async () => {
+    try {
+      await accountApi.logout();
+      await db().delete();
+    } finally {
+      await session.resetAndRedirect(routes.app, { fade: true });
+    }
+  };
+
+  if (!session.exists()) {
+    if (!config.enable_login && !config.enable_signup) {
+      return null;
+    }
+    return (
+      <div className="flex gap-2 border-t border-border p-4">
+        {config.enable_login && (
+          <Button variant="secondary" className="flex-1" onClick={() => fadeNavigate(navigate, routes.login)}>
+            {t("action_bar_sign_in")}
+          </Button>
         )}
-        <ListItemIcon edge="end" sx={{ minWidth: "26px" }}>
-          <IconButton
-            size="small"
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuAnchorEl(e.currentTarget);
-            }}
-          >
-            <MoreVert fontSize="small" />
-          </IconButton>
-        </ListItemIcon>
-      </ListItemButton>
-      <Portal>
-        <SubscriptionPopup subscription={subscription} anchor={menuAnchorEl} onClose={() => setMenuAnchorEl(null)} />
-      </Portal>
-    </>
-  );
-};
+        {config.enable_signup && (
+          <Button variant="ghost" className="flex-1" onClick={() => fadeNavigate(navigate, routes.signup)}>
+            {t("action_bar_sign_up")}
+          </Button>
+        )}
+      </div>
+    );
+  }
 
-const NotificationPermissionRequired = () => {
-  const { t } = useTranslation();
-  const requestPermission = async () => {
-    await notifier.maybeRequestPermission();
-  };
   return (
-    <Alert severity="warning" sx={{ paddingTop: 2 }}>
-      <AlertTitle>{t("alert_notification_permission_required_title")}</AlertTitle>
-      <Typography gutterBottom>{t("alert_notification_permission_required_description")}</Typography>
-      <Button sx={{ float: "right" }} color="inherit" size="small" onClick={requestPermission}>
-        {t("alert_notification_permission_required_button")}
-      </Button>
-    </Alert>
-  );
-};
-
-const NotificationPermissionDeniedAlert = () => {
-  const { t } = useTranslation();
-  return (
-    <Alert severity="warning" sx={{ paddingTop: 2 }}>
-      <AlertTitle>{t("alert_notification_permission_denied_title")}</AlertTitle>
-      <Typography gutterBottom>{t("alert_notification_permission_denied_description")}</Typography>
-    </Alert>
-  );
-};
-
-const NotificationIOSInstallRequiredAlert = () => {
-  const { t } = useTranslation();
-  return (
-    <Alert severity="warning" sx={{ paddingTop: 2 }}>
-      <AlertTitle>{t("alert_notification_ios_install_required_title")}</AlertTitle>
-      <Typography gutterBottom>{t("alert_notification_ios_install_required_description")}</Typography>
-    </Alert>
-  );
-};
-
-const NotificationBrowserNotSupportedAlert = () => {
-  const { t } = useTranslation();
-  return (
-    <Alert severity="warning" sx={{ paddingTop: 2 }}>
-      <AlertTitle>{t("alert_not_supported_title")}</AlertTitle>
-      <Typography gutterBottom>{t("alert_not_supported_description")}</Typography>
-    </Alert>
-  );
-};
-
-const NotificationContextNotSupportedAlert = () => {
-  const { t } = useTranslation();
-  return (
-    <Alert severity="warning" sx={{ paddingTop: 2 }}>
-      <AlertTitle>{t("alert_not_supported_title")}</AlertTitle>
-      <Typography gutterBottom>
-        <Trans
-          i18nKey="alert_not_supported_context_description"
-          components={{
-            mdnLink: <Link href="https://developer.mozilla.org/en-US/docs/Web/API/notification" target="_blank" rel="noopener" />,
-          }}
-        />
-      </Typography>
-    </Alert>
-  );
-};
-
-const VersionUpdateBanner = () => {
-  const { t } = useTranslation();
-  const handleRefresh = () => {
-    window.location.reload();
-  };
-  return (
-    <Alert severity="info" sx={{ paddingTop: 2 }}>
-      <AlertTitle>{t("version_update_available_title")}</AlertTitle>
-      <Typography gutterBottom>{t("version_update_available_description")}</Typography>
-      <Button sx={{ float: "right" }} color="inherit" size="small" onClick={handleRefresh}>
-        {t("common_refresh")}
-      </Button>
-    </Alert>
+    <div className="flex items-center gap-3 border-t border-border px-4 py-3">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-sm font-semibold uppercase text-muted">
+        {session.username()?.[0]}
+      </span>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">{session.username()}</span>
+      <button
+        type="button"
+        onClick={handleLogout}
+        aria-label={t("action_bar_profile_logout")}
+        title={t("action_bar_profile_logout")}
+        className="flex size-8 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-text"
+      >
+        <LogOut className="size-4" />
+      </button>
+    </div>
   );
 };
 
