@@ -267,6 +267,3 @@ export const ReserveLimitChip = () => {
   }
   return <LimitReachedChip />;
 };
-
-/** Payments are not supported; kept as an empty export until Account.jsx drops its billing UI. */
-export const ProChip = () => null;
