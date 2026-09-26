@@ -121,7 +121,7 @@ var (
 	errHTTPBadRequestIncorrectPasswordConfirmation   = &errHTTP{40026, http.StatusBadRequest, "invalid request: password confirmation is not correct", "", nil}
 	errHTTPBadRequestTierInvalid                     = &errHTTP{40030, http.StatusBadRequest, "invalid request: tier does not exist", "", nil}
 	errHTTPBadRequestUserNotFound                    = &errHTTP{40031, http.StatusBadRequest, "invalid request: user does not exist", "", nil}
-	errHTTPBadRequestPhoneCallsDisabled              = &errHTTP{40032, http.StatusBadRequest, "invalid request: calling is disabled", "https://ntfy.sh/docs/config/#phone-calls", nil}
+	errHTTPBadRequestPhoneCallsDisabled              = &errHTTP{40032, http.StatusBadRequest, "invalid request: calling is disabled", "", nil}
 	errHTTPBadRequestWebPushSubscriptionInvalid      = &errHTTP{40038, http.StatusBadRequest, "invalid request: web push payload malformed", "", nil}
 	errHTTPBadRequestWebPushEndpointUnknown          = &errHTTP{40039, http.StatusBadRequest, "invalid request: web push endpoint unknown", "", nil}
 	errHTTPBadRequestWebPushTopicCountTooHigh        = &errHTTP{40040, http.StatusBadRequest, "invalid request: too many web push topic subscriptions", "", nil}
