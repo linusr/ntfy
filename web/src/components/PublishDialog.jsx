@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import * as Popover from "@radix-ui/react-popover";
 import { Clock, Globe, Link2, Mail, Paperclip, Plus, Smile, Upload, X } from "lucide-react";
 import { Trans, useTranslation } from "react-i18next";
-import { formatBytes, maybeWithAuth, topicShortUrl, topicUrl, validTopic, validUrl } from "../app/utils";
+import { formatBytes, maybeWithAuth, shortUrl, topicShortUrl, topicUrl, validTopic, validUrl } from "../app/utils";
 import { imageRegex } from "../app/notificationUtils";
 import AttachmentIcon from "./AttachmentIcon";
 import api from "../app/Api";
@@ -80,10 +80,6 @@ const PublishDialog = (props) => {
   useEffect(() => {
     setMessage(props.message);
   }, [props.message]);
-
-  const updateBaseUrl = (newVal) => {
-    setBaseUrl(validUrl(newVal) ? newVal.replace(/\/$/, "") : newVal);
-  };
 
   const handleSubmit = async (ev) => {
     ev?.preventDefault();
@@ -261,24 +257,14 @@ const PublishDialog = (props) => {
                 disabled={disabled}
                 closeLabel={t("publish_dialog_topic_reset")}
                 onClose={() => {
-                  setBaseUrl(props.baseUrl);
                   setTopic(props.topic);
                   setShowTopicUrl(false);
                 }}
               >
-                <div className="grid flex-1 gap-3 sm:grid-cols-[3fr_2fr]">
-                  <Field label={t("publish_dialog_base_url_label")} htmlFor="publish-base-url">
-                    <Input
-                      id="publish-base-url"
-                      type="url"
-                      placeholder={t("publish_dialog_base_url_placeholder")}
-                      value={baseUrl}
-                      onChange={(ev) => updateBaseUrl(ev.target.value)}
-                      disabled={disabled}
-                    />
-                  </Field>
-                  <Field label={t("publish_dialog_topic_label")} htmlFor="publish-topic">
-                    <Input
+                <Field label={t("publish_dialog_topic_label")} htmlFor="publish-topic" className="flex-1">
+                  <div className="flex h-10 items-center overflow-hidden rounded-xl border border-border-strong bg-surface-2 transition-colors focus-within:border-accent focus-within:ring-3 focus-within:ring-accent-soft">
+                    <span className="max-w-[45%] shrink-0 truncate pl-3 text-sm text-muted">{shortUrl(baseUrl)}/</span>
+                    <input
                       id="publish-topic"
                       placeholder={t("publish_dialog_topic_placeholder")}
                       value={topic}
@@ -286,9 +272,10 @@ const PublishDialog = (props) => {
                       disabled={disabled}
                       // eslint-disable-next-line jsx-a11y/no-autofocus
                       autoFocus={!messageFocused}
+                      className="h-full min-w-0 flex-1 bg-surface pl-1 pr-3 text-sm placeholder:text-muted/70 focus:outline-none disabled:opacity-60"
                     />
-                  </Field>
-                </div>
+                  </div>
+                </Field>
               </ClosableRow>
             )}
 
