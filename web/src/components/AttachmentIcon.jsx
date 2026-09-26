@@ -1,55 +1,24 @@
 import * as React from "react";
-import { Box, Link } from "@mui/material";
 import { useTranslation } from "react-i18next";
-import fileDocument from "../img/file-document.svg";
-import fileImage from "../img/file-image.svg";
-import fileVideo from "../img/file-video.svg";
-import fileAudio from "../img/file-audio.svg";
-import fileApp from "../img/file-app.svg";
+import { FileArchive, FileAudio, FileImage, FileText, FileVideo, Package } from "lucide-react";
 
-const AttachmentIcon = (props) => {
+const iconFor = (type) => {
+  if (!type) return [FileText, "notifications_attachment_file_document"];
+  if (type.startsWith("image/")) return [FileImage, "notifications_attachment_file_image"];
+  if (type.startsWith("video/")) return [FileVideo, "notifications_attachment_file_video"];
+  if (type.startsWith("audio/")) return [FileAudio, "notifications_attachment_file_audio"];
+  if (type === "application/vnd.android.package-archive") return [Package, "notifications_attachment_file_app"];
+  if (/zip|tar|gzip|compressed/.test(type)) return [FileArchive, "notifications_attachment_file_document"];
+  return [FileText, "notifications_attachment_file_document"];
+};
+
+const AttachmentIcon = ({ type }) => {
   const { t } = useTranslation();
-  const { type } = props;
-  let imageFile;
-  let imageLabel;
-  if (!type) {
-    imageFile = fileDocument;
-    imageLabel = t("notifications_attachment_file_image");
-  } else if (type.startsWith("image/")) {
-    imageFile = fileImage;
-    imageLabel = t("notifications_attachment_file_video");
-  } else if (type.startsWith("video/")) {
-    imageFile = fileVideo;
-    imageLabel = t("notifications_attachment_file_video");
-  } else if (type.startsWith("audio/")) {
-    imageFile = fileAudio;
-    imageLabel = t("notifications_attachment_file_audio");
-  } else if (type === "application/vnd.android.package-archive") {
-    imageFile = fileApp;
-    imageLabel = t("notifications_attachment_file_app");
-  } else {
-    imageFile = fileDocument;
-    imageLabel = t("notifications_attachment_file_document");
-  }
-  const icon = (
-    <Box
-      component="img"
-      src={imageFile}
-      alt={imageLabel}
-      loading="lazy"
-      sx={{
-        width: "28px",
-        height: "28px",
-      }}
-    />
-  );
-  if (!props.href) {
-    return icon;
-  }
+  const [Icon, labelKey] = iconFor(type);
   return (
-    <Link href={props.href} target="_blank" rel="noopener noreferrer">
-      {icon}
-    </Link>
+    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent" title={t(labelKey)}>
+      <Icon className="size-5" aria-label={t(labelKey)} />
+    </span>
   );
 };
 

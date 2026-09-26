@@ -1,111 +1,101 @@
-import {
-  Container,
-  ButtonBase,
-  CardActions,
-  CardContent,
-  CircularProgress,
-  Fade,
-  Link,
-  Modal,
-  Snackbar,
-  Stack,
-  Tooltip,
-  Card,
-  Typography,
-  IconButton,
-  Box,
-  Button,
-  Chip,
-} from "@mui/material";
 import * as React from "react";
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
-import CheckIcon from "@mui/icons-material/Check";
-import CloseIcon from "@mui/icons-material/Close";
 import InfiniteScroll from "react-infinite-scroll-component";
 import { Trans, useTranslation } from "react-i18next";
 import { useOutletContext } from "react-router-dom";
-import { copyToClipboard, formatBytes, formatDateTime, maybeActionErrors, openUrl, shortUrl, topicUrl, unmatchedTags } from "../app/utils";
+import * as RadixDialog from "@radix-ui/react-dialog";
+import {
+  BellRing,
+  Check,
+  ChevronDown,
+  ChevronUp,
+  ChevronsUp,
+  Copy,
+  ExternalLink,
+  Inbox,
+  Link2,
+  Loader2,
+  MoreHorizontal,
+  Paperclip,
+  Trash2,
+  X,
+} from "lucide-react";
+import {
+  copyToClipboard,
+  formatBytes,
+  formatDateTime,
+  maybeActionErrors,
+  openUrl,
+  shortUrl,
+  topicDisplayName,
+  topicUrl,
+  unmatchedTags,
+} from "../app/utils";
 import { ACTION_BROADCAST, ACTION_COPY, ACTION_HTTP, ACTION_VIEW } from "../app/actions";
 import { formatMessage, formatTitle, isImage } from "../app/notificationUtils";
-import { LightboxBackdrop, Paragraph, VerticallyCenteredContainer } from "./styles";
 import subscriptionManager from "../app/SubscriptionManager";
 import notifier from "../app/Notifier";
-import priority1 from "../img/priority-1.svg";
-import priority2 from "../img/priority-2.svg";
-import priority4 from "../img/priority-4.svg";
-import priority5 from "../img/priority-5.svg";
-import logoOutline from "../img/alai-outline.svg";
 import AttachmentIcon from "./AttachmentIcon";
 import { useAutoSubscribe } from "./hooks";
 import { usePrefCache } from "./PrefCache";
+import Button from "./ui/Button";
+import IconButton from "./ui/IconButton";
+import Tooltip from "./ui/Tooltip";
+import TopicAvatar from "./ui/TopicAvatar";
+import { Chip, EmptyState } from "./ui/Primitives";
+import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from "./ui/Menu";
+import { useToast } from "./ui/Toast";
+import cn from "./ui/cn";
 
-const priorityFiles = {
-  1: priority1,
-  2: priority2,
-  4: priority4,
-  5: priority5,
-};
+// Loaded lazily so the heavy markdown stack only ships when a text/markdown message is shown
+const MarkdownContent = lazy(() => import("./MarkdownContent"));
 
 export const AllSubscriptions = () => {
-  // allNotifications is preloaded in Layout, so this view has its data on mount (no empty frame on switch).
+  // allNotifications is preloaded in Layout, so this view has its data on mount (no empty frame on switch)
   const { subscriptions, allNotifications } = useOutletContext();
   if (!subscriptions || allNotifications === null || allNotifications === undefined) {
     return <DeferredLoading />;
   }
-  return <AllSubscriptionsList subscriptions={subscriptions} notifications={allNotifications} />;
+  if (subscriptions.length === 0) {
+    return <NoSubscriptions />;
+  }
+  if (allNotifications.length === 0) {
+    return <NoNotifications subscription={subscriptions[0]} all />;
+  }
+  return <NotificationList key="all" notifications={allNotifications} subscriptions={subscriptions} showTopic messageBar={false} />;
 };
 
 export const SingleSubscription = () => {
   const { subscriptions, selected, allNotifications } = useOutletContext();
   useAutoSubscribe(subscriptions, selected);
+  // Filtered from the preloaded list, so switching topics needs no database read
+  const notifications = useMemo(
+    () => (selected && allNotifications ? allNotifications.filter((n) => n.subscriptionId === selected.id) : []),
+    [allNotifications, selected?.id],
+  );
   if (!selected || allNotifications === null || allNotifications === undefined) {
     return <DeferredLoading />;
   }
-  return <SingleSubscriptionList subscription={selected} allNotifications={allNotifications} />;
-};
-
-const AllSubscriptionsList = (props) => {
-  const { subscriptions, notifications } = props;
-  if (subscriptions.length === 0) {
-    return <NoSubscriptions />;
-  }
   if (notifications.length === 0) {
-    return <NoNotificationsWithoutSubscription subscriptions={subscriptions} />;
+    return <NoNotifications subscription={selected} />;
   }
-  return <NotificationList key="all" notifications={notifications} messageBar={false} />;
+  return <NotificationList id={selected.id} notifications={notifications} subscriptions={subscriptions} messageBar />;
 };
 
-const SingleSubscriptionList = (props) => {
-  const { subscription, allNotifications } = props;
-  // Filter the preloaded allNotifications instead of a per-topic query (getNotifications(id) ==
-  // getAllNotifications() filtered by id), so topic switches are instant.
-  const notifications = useMemo(
-    () => allNotifications.filter((notification) => notification.subscriptionId === subscription.id),
-    [allNotifications, subscription.id],
-  );
-  if (notifications.length === 0) {
-    return <NoNotifications subscription={subscription} />;
-  }
-  return <NotificationList id={subscription.id} notifications={notifications} messageBar />;
-};
+const pageSize = 20;
 
-const NotificationList = (props) => {
+const NotificationList = ({ id, notifications, subscriptions, showTopic = false, messageBar }) => {
   const { t } = useTranslation();
-  const pageSize = 20;
-  const { notifications } = props;
-  const [snackOpen, setSnackOpen] = useState(false);
   const [maxCount, setMaxCount] = useState(pageSize);
   const count = Math.min(notifications.length, maxCount);
+  const subscriptionsById = useMemo(() => Object.fromEntries((subscriptions || []).map((s) => [s.id, s])), [subscriptions]);
 
   useEffect(
     () => () => {
       setMaxCount(pageSize);
-      const main = document.getElementById("main");
-      if (main) {
-        main.scrollTo(0, 0);
-      }
+      document.getElementById("main")?.scrollTo(0, 0);
     },
-    [props.id],
+    [id],
   );
 
   return (
@@ -113,75 +103,28 @@ const NotificationList = (props) => {
       dataLength={count}
       next={() => setMaxCount((prev) => prev + pageSize)}
       hasMore={count < notifications.length}
-      loader={<>Loading ...</>}
+      loader={<Loader2 className="mx-auto my-6 size-5 animate-spin text-muted" />}
       scrollThreshold={0.7}
       scrollableTarget="main"
     >
-      <Container
-        maxWidth="md"
+      <div
         role="list"
         aria-label={t("notifications_list")}
-        sx={{
-          marginTop: 3,
-          marginBottom: props.messageBar ? "100px" : 3, // Hack to avoid hiding notifications behind the message bar
-        }}
+        className={cn("mx-auto w-full max-w-3xl space-y-3 px-3 pt-5 sm:px-6", messageBar ? "pb-28" : "pb-8")}
       >
-        <Stack spacing={2}>
-          {notifications.slice(0, count).map((notification) => (
-            <NotificationItem key={notification.id} notification={notification} onShowSnack={() => setSnackOpen(true)} />
-          ))}
-          <Snackbar
-            open={snackOpen}
-            autoHideDuration={3000}
-            onClose={() => setSnackOpen(false)}
-            message={t("notifications_copied_to_clipboard")}
+        {notifications.slice(0, count).map((notification) => (
+          <NotificationItem
+            key={notification.id}
+            notification={notification}
+            subscription={showTopic ? subscriptionsById[notification.subscriptionId] : undefined}
           />
-        </Stack>
-      </Container>
+        ))}
+      </div>
     </InfiniteScroll>
   );
 };
 
-/**
- * Replace links with <Link/> components; this is a combination of the genius function
- * in [1] and the regex in [2].
- *
- * [1] https://github.com/facebook/react/issues/3386#issuecomment-78605760
- * [2] https://github.com/bryanwoods/autolink-js/blob/master/autolink.js#L9
- */
-const autolink = (s) => {
-  const parts = s.split(/(\bhttps?:\/\/[-A-Z0-9+\u0026\u2019@#/%?=()~_|!:,.;]*[-A-Z0-9+\u0026@#/%=~()_|]\b)/gi);
-  for (let i = 1; i < parts.length; i += 2) {
-    parts[i] = (
-      <Link key={i} href={parts[i]} underline="hover" target="_blank" rel="noreferrer">
-        {shortUrl(parts[i])}
-      </Link>
-    );
-  }
-  return <>{parts}</>;
-};
-
-// Loaded lazily so the heavy react-remark/unified markdown stack is only fetched when a
-// text/markdown notification is actually rendered (see MarkdownContent.jsx).
-const MarkdownContent = lazy(() => import("./MarkdownContent"));
-
-const NotificationBody = ({ notification }) => {
-  const displayAsMarkdown = notification.content_type === "text/markdown";
-  const formatted = formatMessage(notification);
-  if (displayAsMarkdown) {
-    return (
-      <Suspense fallback={null}>
-        <MarkdownContent content={formatted} />
-      </Suspense>
-    );
-  }
-  return autolink(formatted);
-};
-
-/**
- * "5 min ago" for the last week, falling back to the formatted date (which honors the user's date and
- * time format preferences) for older messages.
- */
+/** "5 min ago" for the last week, the preference-formatted date for older messages. */
 const formatRelativeTime = (timestamp, fallback) => {
   const seconds = Math.round(timestamp - Date.now() / 1000);
   const abs = Math.abs(seconds);
@@ -195,273 +138,255 @@ const formatRelativeTime = (timestamp, fallback) => {
   return rtf.format(Math.round(seconds / 86400), "day");
 };
 
-const NotificationItem = (props) => {
+const priorityStyles = {
+  1: { icon: ChevronDown, className: "text-muted", label: "publish_dialog_priority_min" },
+  2: { icon: ChevronDown, className: "text-muted", label: "publish_dialog_priority_low" },
+  4: { icon: ChevronUp, className: "text-warning", label: "publish_dialog_priority_high" },
+  5: { icon: ChevronsUp, className: "text-danger", label: "publish_dialog_priority_max" },
+};
+
+const PriorityBadge = ({ priority }) => {
   const { t } = useTranslation();
+  const style = priorityStyles[priority];
+  if (!style) return null;
+  const Icon = style.icon;
+  return (
+    <span className={cn("inline-flex items-center gap-0.5 text-xs font-semibold", style.className)} title={t(style.label)}>
+      <Icon className="size-3.5" aria-label={t("notifications_priority_x", { priority })} />
+      {priority >= 4 && t(style.label)}
+    </span>
+  );
+};
+
+const NotificationItem = ({ notification, subscription }) => {
+  const { t } = useTranslation();
+  const toast = useToast();
   const { dateFormat, timeFormat } = usePrefCache();
-  const { notification } = props;
   const { attachment } = notification;
   const date = formatDateTime(notification.time, dateFormat, timeFormat);
-  const otherTags = unmatchedTags(notification.tags);
-  const handleDelete = async () => {
-    console.log(`[Notifications] Deleting notification ${notification.id}`);
-    await subscriptionManager.deleteNotification(notification.id);
-  };
-  const handleMarkRead = async () => {
-    console.log(`[Notifications] Marking notification ${notification.id} as read`);
-    await subscriptionManager.markNotificationRead(notification.id);
-  };
-  const handleCopy = (s) => {
-    copyToClipboard(s);
-    props.onShowSnack();
-  };
-  const expired = attachment && attachment.expires && attachment.expires < Date.now() / 1000;
-  const hasAttachmentActions = attachment && !expired;
-  const hasClickAction = notification.click;
-  const hasUserActions = notification.actions && notification.actions.length > 0;
-  const showActions = hasAttachmentActions || hasClickAction || hasUserActions;
+  const tags = unmatchedTags(notification.tags);
+  const expired = attachment?.expires && attachment.expires < Date.now() / 1000;
+  const unread = notification.new === 1;
+  const stripe = { 4: "bg-warning", 5: "bg-danger" }[notification.priority];
 
-  const priorityColor = { 4: "warning.main", 5: "error.main" }[notification.priority];
+  const copy = async (text) => {
+    await copyToClipboard(text);
+    toast(t("notifications_copied_to_clipboard"));
+  };
 
   return (
-    <Card sx={{ position: "relative" }} role="listitem" aria-label={t("notifications_list_item")}>
-      {priorityColor && <Box aria-hidden sx={{ position: "absolute", inset: "0 auto 0 0", width: 4, bgcolor: priorityColor }} />}
-      <CardContent>
-        <Stack direction="row" spacing={1} sx={{ alignItems: "flex-start" }}>
-          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
-            <Stack direction="row" spacing={0.75} sx={{ alignItems: "center", color: "text.secondary", fontSize: 13 }}>
-              {notification.new === 1 && (
-                <Box
-                  component="span"
-                  aria-label={t("notifications_new_indicator")}
-                  sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: "primary.main", flexShrink: 0 }}
-                />
+    <article
+      role="listitem"
+      aria-label={t("notifications_list_item")}
+      className="group relative overflow-hidden rounded-2xl border border-border bg-surface transition-shadow hover:shadow-[0_4px_16px_rgb(15_23_42/0.06)] dark:hover:shadow-[0_4px_16px_rgb(0_0_0/0.35)]"
+    >
+      {stripe && <span aria-hidden className={cn("absolute inset-y-0 left-0 w-1", stripe)} />}
+      <div className="p-4 sm:p-5">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+              {unread && <span className="size-2 rounded-full bg-accent" aria-label={t("notifications_new_indicator")} />}
+              {subscription && (
+                <span className="inline-flex items-center gap-1.5 font-medium text-text">
+                  <TopicAvatar name={topicDisplayName(subscription)} size={18} />
+                  {topicDisplayName(subscription)}
+                </span>
               )}
-              <Tooltip title={date} enterDelay={300}>
-                <Typography component="span" sx={{ fontSize: 13 }} color="text.secondary">
-                  {formatRelativeTime(notification.time, date)}
-                </Typography>
+              <Tooltip content={date}>
+                <time dateTime={new Date(notification.time * 1000).toISOString()}>{formatRelativeTime(notification.time, date)}</time>
               </Tooltip>
-              {[1, 2, 4, 5].includes(notification.priority) && (
-                <img
-                  src={priorityFiles[notification.priority]}
-                  alt={t("notifications_priority_x", {
-                    priority: notification.priority,
-                  })}
-                  style={{ height: 18 }}
-                />
-              )}
-            </Stack>
+              <PriorityBadge priority={notification.priority} />
+            </div>
             {notification.title && (
-              <Typography variant="h5" component="div" role="rowheader" sx={{ mt: 0.75 }}>
+              <h3 className="mt-1.5 text-[15px] font-semibold leading-snug">
                 {formatTitle(notification)}
-              </Typography>
+              </h3>
             )}
-            <Typography variant="body1" sx={{ mt: 0.5, whiteSpace: "pre-line", overflowX: "auto", overflowWrap: "anywhere" }}>
+            <div className={cn("break-words text-[15px] leading-relaxed", notification.title ? "mt-1" : "mt-1.5")}>
               <NotificationBody notification={notification} />
               {maybeActionErrors(notification)}
-            </Typography>
-            {attachment && <Attachment attachment={attachment} />}
-            {otherTags.length > 0 && (
-              <Stack direction="row" useFlexGap spacing={0.75} sx={{ mt: 1.5, flexWrap: "wrap" }} aria-label={t("notifications_tags")}>
-                {otherTags.map((tag) => (
-                  <Chip key={tag} label={tag} size="small" />
-                ))}
-              </Stack>
-            )}
-          </Box>
-          <Stack direction="row" sx={{ mt: -0.75, mr: -1, flexShrink: 0, opacity: 0.7, "&:hover": { opacity: 1 } }}>
-            {notification.new === 1 && (
-              <Tooltip title={t("notifications_mark_read")} enterDelay={500}>
-                <IconButton size="small" onClick={handleMarkRead} aria-label={t("notifications_mark_read")}>
-                  <CheckIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            )}
-            <Tooltip title={t("notifications_delete")} enterDelay={500}>
-              <IconButton size="small" onClick={handleDelete} aria-label={t("notifications_delete")}>
-                <CloseIcon fontSize="small" />
+            </div>
+          </div>
+          <div className="-mr-1.5 -mt-1 flex shrink-0 items-center opacity-100 transition-opacity sm:opacity-60 sm:group-hover:opacity-100">
+            {unread && (
+              <IconButton
+                size="sm"
+                label={t("notifications_mark_read")}
+                onClick={() => subscriptionManager.markNotificationRead(notification.id)}
+              >
+                <Check className="size-4" />
               </IconButton>
-            </Tooltip>
-          </Stack>
-        </Stack>
-      </CardContent>
-      {showActions && (
-        <CardActions sx={{ paddingTop: 0 }}>
-          {hasAttachmentActions && (
-            <>
-              <Tooltip title={t("notifications_attachment_copy_url_title")}>
-                <Button onClick={() => handleCopy(attachment.url)}>{t("notifications_attachment_copy_url_button")}</Button>
-              </Tooltip>
-              <Tooltip
-                title={t("notifications_attachment_open_title", {
-                  url: attachment.url,
-                })}
-              >
-                <Button onClick={() => openUrl(attachment.url)}>{t("notifications_attachment_open_button")}</Button>
-              </Tooltip>
-            </>
-          )}
-          {hasClickAction && (
-            <>
-              <Tooltip title={t("notifications_click_copy_url_title")}>
-                <Button onClick={() => handleCopy(notification.click)}>{t("notifications_click_copy_url_button")}</Button>
-              </Tooltip>
-              <Tooltip
-                title={t("notifications_actions_open_url_title", {
-                  url: notification.click,
-                })}
-              >
-                <Button onClick={() => openUrl(notification.click)}>{t("notifications_click_open_button")}</Button>
-              </Tooltip>
-            </>
-          )}
-          {hasUserActions && <UserActions notification={notification} onShowSnack={props.onShowSnack} />}
-        </CardActions>
-      )}
-    </Card>
+            )}
+            <Menu>
+              <MenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={t("action_bar_toggle_action_menu")}
+                  className="flex size-8 items-center justify-center rounded-lg text-muted hover:bg-surface-2 hover:text-text"
+                >
+                  <MoreHorizontal className="size-4" />
+                </button>
+              </MenuTrigger>
+              <MenuContent>
+                {notification.message && (
+                  <MenuItem icon={Copy} onSelect={() => copy(formatMessage(notification))}>
+                    {t("common_copy_to_clipboard")}
+                  </MenuItem>
+                )}
+                {notification.click && (
+                  <>
+                    <MenuItem icon={ExternalLink} onSelect={() => openUrl(notification.click)}>
+                      {t("notifications_click_open_button")}
+                    </MenuItem>
+                    <MenuItem icon={Link2} onSelect={() => copy(notification.click)}>
+                      {t("notifications_click_copy_url_button")}
+                    </MenuItem>
+                  </>
+                )}
+                {attachment && !expired && (
+                  <>
+                    <MenuItem icon={Paperclip} onSelect={() => openUrl(attachment.url)}>
+                      {t("notifications_attachment_open_button")}
+                    </MenuItem>
+                    <MenuItem icon={Link2} onSelect={() => copy(attachment.url)}>
+                      {t("notifications_attachment_copy_url_button")}
+                    </MenuItem>
+                  </>
+                )}
+                {(notification.message || notification.click || (attachment && !expired)) && <MenuSeparator />}
+                <MenuItem icon={Trash2} danger onSelect={() => subscriptionManager.deleteNotification(notification.id)}>
+                  {t("notifications_delete")}
+                </MenuItem>
+              </MenuContent>
+            </Menu>
+          </div>
+        </div>
+
+        {attachment && <Attachment attachment={attachment} />}
+
+        {tags.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5" aria-label={t("notifications_tags")}>
+            {tags.map((tag) => (
+              <Chip key={tag}>{tag}</Chip>
+            ))}
+          </div>
+        )}
+
+        {notification.actions?.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {notification.actions.map((action) => (
+              <UserAction
+                key={action.id}
+                notification={notification}
+                action={action}
+                onCopied={() => toast(t("notifications_copied_to_clipboard"))}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </article>
   );
 };
 
-const Attachment = (props) => {
+/** Plain text with URLs turned into links; markdown messages render through MarkdownContent. */
+const NotificationBody = ({ notification }) => {
+  const formatted = formatMessage(notification);
+  if (notification.content_type === "text/markdown") {
+    return (
+      <Suspense fallback={null}>
+        <MarkdownContent content={formatted} />
+      </Suspense>
+    );
+  }
+  const parts = formatted.split(/(\bhttps?:\/\/[-A-Z0-9+&’@#/%?=()~_|!:,.;]*[-A-Z0-9+&@#/%=~()_|]\b)/gi);
+  return (
+    <span className="whitespace-pre-line">
+      {parts.map((part, i) =>
+        i % 2 === 1 ? (
+          // eslint-disable-next-line react/no-array-index-key
+          <a key={i} href={part} target="_blank" rel="noreferrer noopener" className="text-accent hover:underline">
+            {shortUrl(part)}
+          </a>
+        ) : (
+          part
+        ),
+      )}
+    </span>
+  );
+};
+
+const Attachment = ({ attachment }) => {
   const { t } = useTranslation();
   const { dateFormat, timeFormat } = usePrefCache();
-  const { attachment } = props;
-  const expired = attachment.expires && attachment.expires < Date.now() / 1000;
-  const expires = attachment.expires && attachment.expires > Date.now() / 1000;
-  const displayableImage = !expired && isImage(attachment);
+  const now = Date.now() / 1000;
+  const expired = attachment.expires && attachment.expires < now;
 
-  // Unexpired image
-  if (displayableImage) {
-    return <Image attachment={attachment} />;
+  if (!expired && isImage(attachment)) {
+    return <ImageAttachment attachment={attachment} />;
   }
 
-  // Anything else: Show box
-  const infos = [];
-  if (attachment.size) {
-    infos.push(formatBytes(attachment.size));
+  const details = [];
+  if (attachment.size) details.push(formatBytes(attachment.size));
+  if (attachment.expires && !expired) {
+    details.push(t("notifications_attachment_link_expires", { date: formatDateTime(attachment.expires, dateFormat, timeFormat) }));
   }
-  if (expires) {
-    infos.push(
-      t("notifications_attachment_link_expires", {
-        date: formatDateTime(attachment.expires, dateFormat, timeFormat),
-      }),
-    );
-  }
-  if (expired) {
-    infos.push(t("notifications_attachment_link_expired"));
-  }
-  const maybeInfoText =
-    infos.length > 0 ? (
-      <>
-        <br />
-        {infos.join(", ")}
-      </>
-    ) : null;
+  if (expired) details.push(t("notifications_attachment_link_expired"));
 
-  // If expired, just show infos without click target
-  if (expired) {
-    return (
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          marginTop: 2,
-          padding: 1,
-          borderRadius: "4px",
-        }}
-      >
-        <AttachmentIcon type={attachment.type} />
-        <Typography variant="body2" sx={{ marginLeft: 1, textAlign: "left", color: "text.primary" }}>
-          <b>{attachment.name}</b>
-          {maybeInfoText}
-        </Typography>
-      </Box>
-    );
-  }
-
-  // Not expired
-  return (
-    <ButtonBase
-      sx={{
-        marginTop: 2,
-      }}
-    >
-      <Link
-        href={attachment.url}
-        target="_blank"
-        rel="noopener"
-        underline="none"
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          padding: 1,
-          borderRadius: "4px",
-          "&:hover": {
-            backgroundColor: "rgba(0, 0, 0, 0.05)",
-          },
-        }}
-      >
-        <AttachmentIcon type={attachment.type} />
-        <Typography variant="body2" sx={{ marginLeft: 1, textAlign: "left", color: "text.primary" }}>
-          <b>{attachment.name}</b>
-          {maybeInfoText}
-        </Typography>
-      </Link>
-    </ButtonBase>
-  );
-};
-
-const Image = (props) => {
-  const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
-  return (
+  const content = (
     <>
-      <Box
-        component="img"
-        src={props.attachment.url}
-        loading="lazy"
-        alt={t("notifications_attachment_image")}
-        onClick={() => setOpen(true)}
-        sx={{
-          marginTop: 2,
-          borderRadius: "4px",
-          boxShadow: 2,
-          width: 1,
-          maxHeight: "400px",
-          objectFit: "cover",
-          cursor: "pointer",
-        }}
-      />
-      <Modal open={open} onClose={() => setOpen(false)} slots={{ backdrop: LightboxBackdrop }}>
-        <Fade in={open}>
-          <Box
-            component="img"
-            src={props.attachment.url}
-            alt={t("notifications_attachment_image")}
-            loading="lazy"
-            sx={{
-              maxWidth: 1,
-              maxHeight: 1,
-              position: "absolute",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              padding: 4,
-            }}
-          />
-        </Fade>
-      </Modal>
+      <AttachmentIcon type={attachment.type} />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium">{attachment.name}</span>
+        {details.length > 0 && <span className="block truncate text-xs text-muted">{details.join(" · ")}</span>}
+      </span>
     </>
   );
+
+  return expired ? (
+    <div className="mt-3 flex items-center gap-3 rounded-xl border border-border p-2.5 opacity-70">{content}</div>
+  ) : (
+    <a
+      href={attachment.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-3 flex items-center gap-3 rounded-xl border border-border p-2.5 transition-colors hover:bg-surface-2"
+    >
+      {content}
+    </a>
+  );
 };
 
-const UserActions = (props) => (
-  <>
-    {props.notification.actions.map((action) => (
-      <UserAction key={action.id} notification={props.notification} action={action} onShowSnack={props.onShowSnack} />
-    ))}
-  </>
-);
+const ImageAttachment = ({ attachment }) => {
+  const { t } = useTranslation();
+  return (
+    <RadixDialog.Root>
+      <RadixDialog.Trigger asChild>
+        <button
+          type="button"
+          className="mt-3 block w-full overflow-hidden rounded-xl border border-border"
+          aria-label={t("notifications_attachment_image")}
+        >
+          <img src={attachment.url} loading="lazy" alt={t("notifications_attachment_image")} className="max-h-96 w-full object-cover" />
+        </button>
+      </RadixDialog.Trigger>
+      <RadixDialog.Portal>
+        <RadixDialog.Overlay className="fixed inset-0 z-50 bg-black/85" />
+        <RadixDialog.Content className="fixed inset-0 z-50 flex items-center justify-center p-6 outline-none">
+          <RadixDialog.Title className="sr-only">{attachment.name}</RadixDialog.Title>
+          <RadixDialog.Description className="sr-only">{t("notifications_attachment_image")}</RadixDialog.Description>
+          <img src={attachment.url} alt={t("notifications_attachment_image")} className="max-h-full max-w-full rounded-lg object-contain" />
+          <RadixDialog.Close
+            className="absolute right-4 top-4 rounded-full bg-white/10 p-2 text-white hover:bg-white/20"
+            aria-label={t("common_close")}
+          >
+            <X className="size-5" />
+          </RadixDialog.Close>
+        </RadixDialog.Content>
+      </RadixDialog.Portal>
+    </RadixDialog.Root>
+  );
+};
 
 const ACTION_PROGRESS_ONGOING = 1;
 const ACTION_PROGRESS_SUCCESS = 2;
@@ -481,7 +406,6 @@ const updateActionStatus = (notification, action, progress, error) => {
 };
 
 const clearNotification = async (notification) => {
-  console.log(`[Notifications] Clearing notification ${notification.id}`);
   const subscription = await subscriptionManager.get(notification.subscriptionId);
   if (subscription) {
     await notifier.cancel(subscription, notification);
@@ -490,19 +414,15 @@ const clearNotification = async (notification) => {
 };
 
 const performHttpAction = async (notification, action) => {
-  console.log(`[Notifications] Performing HTTP user action`, action);
   try {
     updateActionStatus(notification, action, ACTION_PROGRESS_ONGOING, null);
     const response = await fetch(action.url, {
       method: action.method ?? "POST",
       headers: action.headers ?? {},
-      // This must not null-coalesce to a non nullish value. Otherwise, the fetch API
-      // will reject it for "having a body"
+      // Must stay nullish when unset, or fetch rejects GET requests for "having a body"
       body: action.body,
     });
-    console.log(`[Notifications] HTTP user action response`, response);
-    const success = response.status >= 200 && response.status <= 299;
-    if (success) {
+    if (response.status >= 200 && response.status <= 299) {
       updateActionStatus(notification, action, ACTION_PROGRESS_SUCCESS, null);
       if (action.clear) {
         await clearNotification(notification);
@@ -516,15 +436,13 @@ const performHttpAction = async (notification, action) => {
   }
 };
 
-const UserAction = (props) => {
+const UserAction = ({ notification, action, onCopied }) => {
   const { t } = useTranslation();
-  const { notification } = props;
-  const { action } = props;
   if (action.action === ACTION_BROADCAST) {
     return (
-      <Tooltip title={t("notifications_actions_not_supported")}>
+      <Tooltip content={t("notifications_actions_not_supported")}>
         <span>
-          <Button disabled aria-label={t("notifications_actions_not_supported")}>
+          <Button size="sm" variant="secondary" disabled>
             {action.label}
           </Button>
         </span>
@@ -532,20 +450,17 @@ const UserAction = (props) => {
     );
   }
   if (action.action === ACTION_VIEW) {
-    const handleClick = () => {
-      openUrl(action.url);
-      if (action.clear) {
-        clearNotification(notification);
-      }
-    };
     return (
-      <Tooltip title={t("notifications_actions_open_url_title", { url: action.url })}>
+      <Tooltip content={t("notifications_actions_open_url_title", { url: action.url })}>
         <Button
-          onClick={handleClick}
-          aria-label={t("notifications_actions_open_url_title", {
-            url: action.url,
-          })}
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            openUrl(action.url);
+            if (action.clear) clearNotification(notification);
+          }}
         >
+          <ExternalLink className="size-3.5" />
           {action.label}
         </Button>
       </Tooltip>
@@ -553,114 +468,56 @@ const UserAction = (props) => {
   }
   if (action.action === ACTION_HTTP) {
     const method = action.method ?? "POST";
-    const label = action.label + (ACTION_LABEL_SUFFIX[action.progress ?? 0] ?? "");
     return (
-      <Tooltip
-        title={t("notifications_actions_http_request_title", {
-          method,
-          url: action.url,
-        })}
-      >
+      <Tooltip content={t("notifications_actions_http_request_title", { method, url: action.url })}>
         <Button
+          size="sm"
+          variant="secondary"
           onClick={() => performHttpAction(notification, action)}
-          aria-label={t("notifications_actions_http_request_title", {
-            method,
-            url: action.url,
-          })}
+          disabled={action.progress === ACTION_PROGRESS_ONGOING}
         >
-          {label}
+          {action.label + (ACTION_LABEL_SUFFIX[action.progress ?? 0] ?? "")}
         </Button>
       </Tooltip>
     );
   }
   if (action.action === ACTION_COPY) {
-    const handleClick = async () => {
-      await copyToClipboard(action.value);
-      props.onShowSnack();
-      if (action.clear) {
-        await clearNotification(notification);
-      }
-    };
     return (
-      <Tooltip title={t("common_copy_to_clipboard")}>
-        <Button onClick={handleClick} aria-label={t("common_copy_to_clipboard")}>
-          {action.label}
-        </Button>
-      </Tooltip>
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={async () => {
+          await copyToClipboard(action.value);
+          onCopied();
+          if (action.clear) await clearNotification(notification);
+        }}
+      >
+        <Copy className="size-3.5" />
+        {action.label}
+      </Button>
     );
   }
-  return null; // Others
+  return null;
 };
 
-const NoNotifications = (props) => {
+const CurlExample = ({ url }) => {
   const { t } = useTranslation();
-  const topicUrlResolved = topicUrl(props.subscription.baseUrl, props.subscription.topic);
+  const toast = useToast();
+  const command = `curl -d "Hi" ${url}`;
   return (
-    <VerticallyCenteredContainer maxWidth="xs">
-      <Typography variant="h5" align="center" sx={{ paddingBottom: 1 }}>
-        <img src={logoOutline} height="64" width="64" alt={t("action_bar_logo_alt")} />
-        <br />
-        {t("notifications_none_for_topic_title")}
-      </Typography>
-      <Paragraph>{t("notifications_none_for_topic_description")}</Paragraph>
-      <Paragraph>
-        {t("notifications_example")}:<br />
-        <tt>
-          {'$ curl -d "Hi" '}
-          {topicUrlResolved}
-        </tt>
-      </Paragraph>
-      <Paragraph>
-        <ForMoreDetails />
-      </Paragraph>
-    </VerticallyCenteredContainer>
-  );
-};
-
-const NoNotificationsWithoutSubscription = (props) => {
-  const { t } = useTranslation();
-  const subscription = props.subscriptions[0];
-  const topicUrlResolved = topicUrl(subscription.baseUrl, subscription.topic);
-  return (
-    <VerticallyCenteredContainer maxWidth="xs">
-      <Typography variant="h5" align="center" sx={{ paddingBottom: 1 }}>
-        <img src={logoOutline} height="64" width="64" alt={t("action_bar_logo_alt")} />
-        <br />
-        {t("notifications_none_for_any_title")}
-      </Typography>
-      <Paragraph>{t("notifications_none_for_any_description")}</Paragraph>
-      <Paragraph>
-        {t("notifications_example")}:<br />
-        <tt>
-          {'$ curl -d "Hi" '}
-          {topicUrlResolved}
-        </tt>
-      </Paragraph>
-      <Paragraph>
-        <ForMoreDetails />
-      </Paragraph>
-    </VerticallyCenteredContainer>
-  );
-};
-
-const NoSubscriptions = () => {
-  const { t } = useTranslation();
-  return (
-    <VerticallyCenteredContainer maxWidth="xs">
-      <Typography variant="h5" align="center" sx={{ paddingBottom: 1 }}>
-        <img src={logoOutline} height="64" width="64" alt={t("action_bar_logo_alt")} />
-        <br />
-        {t("notifications_no_subscriptions_title")}
-      </Typography>
-      <Paragraph>
-        {t("notifications_no_subscriptions_description", {
-          linktext: t("nav_button_subscribe"),
-        })}
-      </Paragraph>
-      <Paragraph>
-        <ForMoreDetails />
-      </Paragraph>
-    </VerticallyCenteredContainer>
+    <div className="mt-4 flex items-center gap-2 rounded-xl border border-border bg-surface px-3 py-2 text-left">
+      <code className="min-w-0 flex-1 truncate font-mono text-xs text-text">{command}</code>
+      <IconButton
+        size="sm"
+        label={t("common_copy_to_clipboard")}
+        onClick={async () => {
+          await copyToClipboard(command);
+          toast(t("notifications_copied_to_clipboard"));
+        }}
+      >
+        <Copy className="size-4" />
+      </IconButton>
+    </div>
   );
 };
 
@@ -668,32 +525,52 @@ const ForMoreDetails = () => (
   <Trans
     i18nKey="notifications_more_details"
     components={{
-      websiteLink: <Link href="https://ntfy.sh" target="_blank" rel="noopener" />,
-      docsLink: <Link href="https://ntfy.sh/docs" target="_blank" rel="noopener" />,
+      // eslint-disable-next-line jsx-a11y/anchor-has-content, jsx-a11y/control-has-associated-label
+      websiteLink: <a className="text-accent hover:underline" href="https://ntfy.sh" target="_blank" rel="noopener noreferrer" />,
+      // eslint-disable-next-line jsx-a11y/anchor-has-content, jsx-a11y/control-has-associated-label
+      docsLink: <a className="text-accent hover:underline" href="/docs" target="_blank" rel="noopener noreferrer" />,
     }}
   />
 );
 
-const Loading = () => {
+const NoNotifications = ({ subscription, all = false }) => {
   const { t } = useTranslation();
   return (
-    <VerticallyCenteredContainer>
-      <Typography variant="h5" color="text.secondary" align="center" sx={{ paddingBottom: 1 }}>
-        <CircularProgress disableShrink sx={{ marginBottom: 1 }} />
-        <br />
-        {t("notifications_loading")}
-      </Typography>
-    </VerticallyCenteredContainer>
+    <EmptyState icon={BellRing} title={t(all ? "notifications_none_for_any_title" : "notifications_none_for_topic_title")}>
+      <p>{t(all ? "notifications_none_for_any_description" : "notifications_none_for_topic_description")}</p>
+      <CurlExample url={topicUrl(subscription.baseUrl, subscription.topic)} />
+      <p className="mt-4">
+        <ForMoreDetails />
+      </p>
+    </EmptyState>
   );
 };
 
-// Render nothing until a load takes at least `delayMs`, so the centered spinner only shows on
-// genuinely slow loads -- normal sub-frame IndexedDB reads don't flash it on every remount.
+const NoSubscriptions = () => {
+  const { t } = useTranslation();
+  return (
+    <EmptyState icon={Inbox} title={t("notifications_no_subscriptions_title")}>
+      <p>{t("notifications_no_subscriptions_description", { linktext: t("nav_button_subscribe") })}</p>
+      <p className="mt-4">
+        <ForMoreDetails />
+      </p>
+    </EmptyState>
+  );
+};
+
+// Nothing renders until a load takes at least `delayMs`, so fast IndexedDB reads never flash a spinner
 const DeferredLoading = ({ delayMs = 250 }) => {
+  const { t } = useTranslation();
   const [show, setShow] = useState(false);
   useEffect(() => {
     const timer = setTimeout(() => setShow(true), delayMs);
     return () => clearTimeout(timer);
   }, [delayMs]);
-  return show ? <Loading /> : null;
+  if (!show) return null;
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 text-muted">
+      <Loader2 className="size-7 animate-spin text-accent" />
+      <p className="text-sm">{t("notifications_loading")}</p>
+    </div>
+  );
 };
