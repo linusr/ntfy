@@ -1,16 +1,12 @@
 import * as React from "react";
 import { useRef, useState } from "react";
-import { Typography, Box, TextField, ClickAwayListener, Fade, InputAdornment, styled, IconButton, Popper } from "@mui/material";
-import Close from "@mui/icons-material/Close";
+import * as Popover from "@radix-ui/react-popover";
+import { Search, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { splitNoEmpty } from "../app/utils";
 import { rawEmojis } from "../app/emojis";
 
-// Create emoji list by category and create a search base (string with all search words)
-//
-// This also filters emojis that are not supported by Desktop Chrome.
-// This is a hack, but on Ubuntu 18.04, with Chrome 99, only Emoji <= 11 are supported.
-
+// Desktop Chrome on older Linux renders only up to Emoji 11, so newer emojis are hidden there.
 const emojisByCategory = {};
 const isDesktopChrome = /Chrome/.test(navigator.userAgent) && !/Mobile/.test(navigator.userAgent);
 const maxSupportedVersionForDesktopChrome = 11;
@@ -23,138 +19,88 @@ rawEmojis.forEach((emoji) => {
     const supportedEmoji = unicodeVersion <= maxSupportedVersionForDesktopChrome || !isDesktopChrome;
     if (supportedEmoji) {
       const searchBase = `${emoji.description.toLowerCase()} ${emoji.aliases.join(" ")} ${emoji.tags.join(" ")}`;
-      const emojiWithSearchBase = { ...emoji, searchBase };
-      emojisByCategory[emoji.category].push(emojiWithSearchBase);
+      emojisByCategory[emoji.category].push({ ...emoji, searchBase });
     }
   } catch (e) {
-    // Nothing. Ignore.
+    // Malformed entries are skipped
   }
 });
 
-const EmojiPicker = (props) => {
+const emojiMatches = (emoji, words) => words.length === 0 || words.some((word) => emoji.searchBase.includes(word));
+
+/** Search box and emoji grid, rendered inside the publish dialog's popover. Picking passes the emoji's first alias. */
+const EmojiPicker = ({ onEmojiPick }) => {
   const { t } = useTranslation();
-  const open = Boolean(props.anchorEl);
   const [search, setSearch] = useState("");
   const searchRef = useRef(null);
   const searchFields = splitNoEmpty(search.toLowerCase(), " ");
 
-  const handleSearchClear = () => {
-    setSearch("");
-    searchRef.current?.focus();
-  };
-
-  return (
-    <Popper open={open} anchorEl={props.anchorEl} placement="bottom-start" sx={{ zIndex: 10005 }} transition>
-      {({ TransitionProps }) => (
-        <ClickAwayListener onClickAway={props.onClose}>
-          <Fade {...TransitionProps} timeout={350}>
-            <Box
-              sx={{
-                boxShadow: 3,
-                padding: 2,
-                paddingRight: 0,
-                paddingBottom: 1,
-                width: "380px",
-                maxHeight: "300px",
-                backgroundColor: "background.paper",
-                overflowY: "scroll",
-              }}
-            >
-              <TextField
-                inputRef={searchRef}
-                margin="dense"
-                size="small"
-                placeholder={t("emoji_picker_search_placeholder")}
-                value={search}
-                onChange={(ev) => setSearch(ev.target.value)}
-                type="text"
-                variant="standard"
-                fullWidth
-                sx={{ marginTop: 0, marginBottom: "12px", paddingRight: 2 }}
-                slotProps={{
-                  htmlInput: {
-                    role: "searchbox",
-                    "aria-label": t("emoji_picker_search_placeholder"),
-                  },
-                  input: {
-                    endAdornment: (
-                      <InputAdornment position="end" sx={{ display: search ? "" : "none" }}>
-                        <IconButton size="small" onClick={handleSearchClear} edge="end" aria-label={t("emoji_picker_search_clear")}>
-                          <Close />
-                        </IconButton>
-                      </InputAdornment>
-                    ),
-                  },
-                }}
-              />
-              <Box
-                sx={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  paddingRight: 0,
-                  marginTop: 1,
-                }}
-              >
-                {Object.keys(emojisByCategory).map((category) => (
-                  <Category
-                    key={category}
-                    title={category}
-                    emojis={emojisByCategory[category]}
-                    search={searchFields}
-                    onPick={props.onEmojiPick}
-                  />
-                ))}
-              </Box>
-            </Box>
-          </Fade>
-        </ClickAwayListener>
-      )}
-    </Popper>
-  );
-};
-
-const Category = (props) => {
-  const showTitle = props.search.length === 0;
   return (
     <>
-      {showTitle && (
-        <Typography variant="body1" sx={{ width: "100%", marginBottom: 1 }}>
-          {props.title}
-        </Typography>
-      )}
-      {props.emojis.map((emoji) => (
-        <Emoji key={emoji.aliases[0]} emoji={emoji} search={props.search} onClick={() => props.onPick(emoji.aliases[0])} />
-      ))}
+      <div className="relative border-b border-border p-2">
+        <Search className="pointer-events-none absolute left-4.5 top-1/2 size-4 -translate-y-1/2 text-muted" aria-hidden />
+        <input
+          ref={searchRef}
+          // eslint-disable-next-line jsx-a11y/no-autofocus
+          autoFocus
+          role="searchbox"
+          aria-label={t("emoji_picker_search_placeholder")}
+          placeholder={t("emoji_picker_search_placeholder")}
+          value={search}
+          onChange={(ev) => setSearch(ev.target.value)}
+          className="h-9 w-full rounded-lg bg-surface-2 pl-8 pr-8 text-sm placeholder:text-muted/70 focus:outline-none focus:ring-2 focus:ring-accent-soft"
+        />
+        {search && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearch("");
+              searchRef.current?.focus();
+            }}
+            aria-label={t("emoji_picker_search_clear")}
+            className="absolute right-4 top-1/2 -translate-y-1/2 rounded p-0.5 text-muted hover:text-text"
+          >
+            <X className="size-4" />
+          </button>
+        )}
+      </div>
+      <div className="overflow-y-auto p-2">
+        {Object.keys(emojisByCategory).map((category) => (
+          <Category key={category} title={category} emojis={emojisByCategory[category]} search={searchFields} onPick={onEmojiPick} />
+        ))}
+      </div>
     </>
   );
 };
 
-const emojiMatches = (emoji, words) => words.length === 0 || words.some((word) => emoji.searchBase.includes(word));
-
-const Emoji = (props) => {
-  const { emoji } = props;
-  const matches = emojiMatches(emoji, props.search);
-  const title = `${emoji.description} (${emoji.aliases[0]})`;
+const Category = ({ title, emojis, search, onPick }) => {
+  const matching = emojis.filter((emoji) => emojiMatches(emoji, search));
+  if (matching.length === 0) {
+    return null;
+  }
   return (
-    <EmojiDiv onClick={props.onClick} title={title} aria-label={title} style={{ display: matches ? "" : "none" }}>
-      {props.emoji.emoji}
-    </EmojiDiv>
+    <div className="mb-2">
+      {search.length === 0 && <p className="px-1 pb-1 pt-2 text-xs font-medium text-muted">{title}</p>}
+      <div className="grid grid-cols-8">
+        {matching.map((emoji) => {
+          const label = `${emoji.description} (${emoji.aliases[0]})`;
+          return (
+            <Popover.Close asChild key={emoji.aliases[0]}>
+              <button
+                type="button"
+                title={label}
+                aria-label={label}
+                onClick={() => onPick(emoji.aliases[0])}
+                className="flex aspect-square items-center justify-center rounded-lg text-2xl hover:bg-surface-2"
+              >
+                {emoji.emoji}
+              </button>
+            </Popover.Close>
+          );
+        })}
+      </div>
+    </div>
   );
 };
-
-const EmojiDiv = styled("div")({
-  fontSize: "30px",
-  width: "30px",
-  height: "30px",
-  marginTop: "8px",
-  marginBottom: "8px",
-  marginRight: "8px",
-  lineHeight: "30px",
-  cursor: "pointer",
-  opacity: 0.85,
-  "&:hover": {
-    opacity: 1,
-  },
-});
 
 export default EmojiPicker;

@@ -1,38 +1,26 @@
-import { AppBar, Toolbar, IconButton, Typography, Box, MenuItem, Button, Divider, ListItemIcon } from "@mui/material";
-import MenuIcon from "@mui/icons-material/Menu";
 import * as React from "react";
 import { useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import MoreVertIcon from "@mui/icons-material/MoreVert";
-import NotificationsIcon from "@mui/icons-material/Notifications";
-import NotificationsOffIcon from "@mui/icons-material/NotificationsOff";
-import RefreshIcon from "@mui/icons-material/Refresh";
+import { useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import AccountCircleIcon from "@mui/icons-material/AccountCircle";
-import Logout from "@mui/icons-material/Logout";
-import Person from "@mui/icons-material/Person";
-import Settings from "@mui/icons-material/Settings";
-import session from "../app/Session";
-import logo from "../img/alai.svg";
+import { Bell, BellOff, Menu as MenuIcon, MoreHorizontal, RefreshCw } from "lucide-react";
 import subscriptionManager from "../app/SubscriptionManager";
 import routes from "./routes";
-import db from "../app/db";
-import { topicDisplayName } from "../app/utils";
-import { fadeNavigate } from "../app/transition";
-import Navigation from "./Navigation";
-import accountApi from "../app/AccountApi";
-import PopupMenu from "./PopupMenu";
+import { shortUrl, topicDisplayName } from "../app/utils";
 import { SubscriptionPopup } from "./SubscriptionPopup";
 import { useIsLaunchedPWA } from "./hooks";
+import IconButton from "./ui/IconButton";
+import TopicAvatar from "./ui/TopicAvatar";
 
+/** Header of the main area: current topic or page, and the topic's actions. */
 const ActionBar = (props) => {
   const { t } = useTranslation();
   const location = useLocation();
   const isLaunchedPWA = useIsLaunchedPWA();
+  const { selected } = props;
 
-  let title = "Alai";
-  if (props.selected) {
-    title = topicDisplayName(props.selected);
+  let title = t("nav_button_all_notifications");
+  if (selected) {
+    title = topicDisplayName(selected);
   } else if (location.pathname === routes.settings) {
     title = t("action_bar_settings");
   } else if (location.pathname === routes.account) {
@@ -40,78 +28,45 @@ const ActionBar = (props) => {
   }
 
   return (
-    <AppBar
-      position="fixed"
-      sx={{
-        width: "100%",
-        zIndex: { sm: 1250 }, // > Navigation (1200), but < Dialog (1300)
-        ml: { sm: `${Navigation.width}px` },
-      }}
-    >
-      <Toolbar sx={{ pr: "16px" }}>
-        <IconButton
-          color="inherit"
-          edge="start"
-          aria-label={t("action_bar_show_menu")}
-          onClick={props.onMobileDrawerToggle}
-          sx={{ mr: 2, display: { sm: "none" } }}
-        >
-          <MenuIcon />
-        </IconButton>
-        <Box
-          component="img"
-          src={logo}
-          alt={t("action_bar_logo_alt")}
-          sx={{
-            display: { xs: "none", sm: "block" },
-            marginRight: "12px",
-            height: "30px",
-            borderRadius: "8px",
-          }}
-        />
-        <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
-          {title}
-        </Typography>
-        {isLaunchedPWA && <ReloadIcon />}
-        {props.selected && <SettingsIcons subscription={props.selected} onUnsubscribe={props.onUnsubscribe} />}
-        <ProfileIcon />
-      </Toolbar>
-    </AppBar>
+    <header className="fixed inset-x-0 top-0 z-20 flex h-16 items-center gap-2 border-b border-border bg-surface/80 px-3 backdrop-blur-xl backdrop-saturate-150 sm:left-[272px] sm:px-6">
+      <IconButton label={t("action_bar_show_menu")} tooltip={false} className="sm:hidden" onClick={props.onMobileDrawerToggle}>
+        <MenuIcon className="size-5" />
+      </IconButton>
+      {selected && <TopicAvatar name={title} size={32} />}
+      <div className="min-w-0 flex-1">
+        <h1 className="truncate text-base font-semibold leading-tight">{title}</h1>
+        {selected && <p className="truncate text-xs text-muted">{shortUrl(selected.baseUrl)}</p>}
+      </div>
+      {isLaunchedPWA && <ReloadButton />}
+      {selected && <TopicActions subscription={selected} />}
+    </header>
   );
 };
 
-const SettingsIcons = (props) => {
+const TopicActions = ({ subscription }) => {
   const { t } = useTranslation();
   const [anchorEl, setAnchorEl] = useState(null);
-  const { subscription } = props;
+  const muted = !!subscription.mutedUntil;
 
   const handleToggleMute = async () => {
-    const mutedUntil = subscription.mutedUntil ? 0 : 1; // Make this a timestamp in the future
-    await subscriptionManager.setMutedUntil(subscription.id, mutedUntil);
+    await subscriptionManager.setMutedUntil(subscription.id, muted ? 0 : 1); // 1 = muted until unmuted
   };
 
   return (
     <>
-      <IconButton color="inherit" size="large" edge="end" onClick={handleToggleMute} aria-label={t("action_bar_toggle_mute")}>
-        {subscription.mutedUntil ? <NotificationsOffIcon /> : <NotificationsIcon />}
+      <IconButton label={t("action_bar_toggle_mute")} onClick={handleToggleMute} className={muted ? "text-warning" : undefined}>
+        {muted ? <BellOff className="size-5" /> : <Bell className="size-5" />}
       </IconButton>
-      <IconButton
-        color="inherit"
-        size="large"
-        edge="end"
-        onClick={(ev) => setAnchorEl(ev.currentTarget)}
-        aria-label={t("action_bar_toggle_action_menu")}
-      >
-        <MoreVertIcon />
+      <IconButton label={t("action_bar_toggle_action_menu")} onClick={(ev) => setAnchorEl(ev.currentTarget)}>
+        <MoreHorizontal className="size-5" />
       </IconButton>
       <SubscriptionPopup subscription={subscription} anchor={anchorEl} placement="right" onClose={() => setAnchorEl(null)} />
     </>
   );
 };
 
-// ReloadIcon hard-refreshes the app. A plain reload would just serve the precached PWA shell,
-// so we first purge the service worker caches to force fresh assets from the network.
-const ReloadIcon = () => {
+/** Hard refresh for the installed PWA: purges service worker caches first, since a plain reload serves the precached shell. */
+const ReloadButton = () => {
   const { t } = useTranslation();
 
   const handleReload = async () => {
@@ -128,85 +83,9 @@ const ReloadIcon = () => {
   };
 
   return (
-    <IconButton color="inherit" size="large" edge="end" onClick={handleReload} aria-label={t("action_bar_reload")}>
-      <RefreshIcon />
+    <IconButton label={t("action_bar_reload")} onClick={handleReload}>
+      <RefreshCw className="size-5" />
     </IconButton>
-  );
-};
-
-const ProfileIcon = () => {
-  const { t } = useTranslation();
-  const [anchorEl, setAnchorEl] = useState(null);
-  const open = Boolean(anchorEl);
-  const navigate = useNavigate();
-
-  const handleClick = (event) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleClose = () => {
-    setAnchorEl(null);
-  };
-
-  const handleLogout = async () => {
-    try {
-      await accountApi.logout();
-      await db().delete();
-    } finally {
-      await session.resetAndRedirect(routes.app, { fade: true });
-    }
-  };
-
-  return (
-    <>
-      {session.exists() && (
-        <IconButton color="inherit" size="large" edge="end" onClick={handleClick} aria-label={t("action_bar_profile_title")}>
-          <AccountCircleIcon />
-        </IconButton>
-      )}
-      {!session.exists() && config.enable_login && (
-        <Button
-          color="inherit"
-          variant="text"
-          onClick={() => fadeNavigate(navigate, routes.login)}
-          sx={{ m: 1 }}
-          aria-label={t("action_bar_sign_in")}
-        >
-          {t("action_bar_sign_in")}
-        </Button>
-      )}
-      {!session.exists() && config.enable_signup && (
-        <Button
-          color="inherit"
-          variant="outlined"
-          onClick={() => fadeNavigate(navigate, routes.signup)}
-          aria-label={t("action_bar_sign_up")}
-        >
-          {t("action_bar_sign_up")}
-        </Button>
-      )}
-      <PopupMenu horizontal="right" anchorEl={anchorEl} open={open} onClose={handleClose}>
-        <MenuItem onClick={() => navigate(routes.account)}>
-          <ListItemIcon>
-            <Person />
-          </ListItemIcon>
-          <b>{session.username()}</b>
-        </MenuItem>
-        <Divider />
-        <MenuItem onClick={() => navigate(routes.settings)}>
-          <ListItemIcon>
-            <Settings fontSize="small" />
-          </ListItemIcon>
-          {t("action_bar_profile_settings")}
-        </MenuItem>
-        <MenuItem onClick={handleLogout}>
-          <ListItemIcon>
-            <Logout fontSize="small" />
-          </ListItemIcon>
-          {t("action_bar_profile_logout")}
-        </MenuItem>
-      </PopupMenu>
-    </>
   );
 };
 
