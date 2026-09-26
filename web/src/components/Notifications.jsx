@@ -197,11 +197,7 @@ const NotificationItem = ({ notification, subscription }) => {
               </Tooltip>
               <PriorityBadge priority={notification.priority} />
             </div>
-            {notification.title && (
-              <h3 className="mt-1.5 text-[15px] font-semibold leading-snug">
-                {formatTitle(notification)}
-              </h3>
-            )}
+            {notification.title && <h3 className="mt-1.5 text-[15px] font-semibold leading-snug">{formatTitle(notification)}</h3>}
             <div className={cn("break-words text-[15px] leading-relaxed", notification.title ? "mt-1" : "mt-1.5")}>
               <NotificationBody notification={notification} />
               {maybeActionErrors(notification)}
