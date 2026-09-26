@@ -303,7 +303,7 @@ const ProfileFooter = () => {
       return null;
     }
     return (
-      <div className="flex gap-2 border-t border-border p-4">
+      <div className="flex h-16 shrink-0 items-center gap-2 border-t border-border px-4">
         {config.enable_login && (
           <Button variant="secondary" className="flex-1" onClick={() => fadeNavigate(navigate, routes.login)}>
             {t("action_bar_sign_in")}
@@ -319,7 +319,7 @@ const ProfileFooter = () => {
   }
 
   return (
-    <div className="flex items-center gap-3 border-t border-border px-4 py-3">
+    <div className="flex h-16 shrink-0 items-center gap-3 border-t border-border px-4">
       <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-surface-2 text-sm font-semibold uppercase text-muted">
         {session.username()?.[0]}
       </span>

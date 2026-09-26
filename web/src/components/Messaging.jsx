@@ -90,7 +90,7 @@ const MessageBar = (props) => {
   };
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface/80 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl backdrop-saturate-150 sm:left-[272px] sm:px-6">
+    <div className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-surface/80 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 backdrop-blur-xl backdrop-saturate-150 sm:left-[272px] sm:flex sm:h-16 sm:items-center sm:px-6 sm:py-0">
       <div className="mx-auto flex w-full max-w-3xl items-center gap-2">
         <IconButton label={t("message_bar_show_dialog")} onClick={props.onOpenDialogClick}>
           <ChevronUp className="size-5" />
